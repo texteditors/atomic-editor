@@ -4,10 +4,10 @@ import {
   Facet,
   Prec,
   StateField,
+  Transaction,
   type EditorState,
   type Extension,
   type Range,
-  type Transaction,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -56,15 +56,41 @@ interface TableModel {
 }
 
 function collectCells(state: EditorState, rowNode: SyntaxNode): string[] {
-  const { doc } = state;
+  // Split the row's raw line on unescaped `|` rather than collecting
+  // lezer `TableCell` nodes. lezer emits NO `TableCell` for an empty
+  // cell, so a node-based count silently drops blank columns — which
+  // is exactly what "Insert column left/right" creates. Counting cells
+  // from the pipe-delimited text keeps blank columns (and their
+  // positions) intact through the parse → serialize round-trip.
+  return splitRowCells(state.doc.lineAt(rowNode.from).text);
+}
+
+export function splitRowCells(line: string): string[] {
+  let s = line.trim();
+  // Strip the optional outer pipes so they don't yield phantom empty
+  // leading/trailing cells.
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+
   const cells: string[] = [];
-  const cursor = rowNode.cursor();
-  if (!cursor.firstChild()) return cells;
-  do {
-    if (cursor.name === 'TableCell') {
-      cells.push(doc.sliceString(cursor.from, cursor.to).trim());
+  let buf = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    // A backslash escapes the next char (e.g. `\|` is a literal pipe in
+    // a GFM cell) — keep both and don't treat the pipe as a separator.
+    if (ch === '\\' && i + 1 < s.length) {
+      buf += ch + s[i + 1];
+      i++;
+      continue;
     }
-  } while (cursor.nextSibling());
+    if (ch === '|') {
+      cells.push(buf.trim());
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  cells.push(buf.trim());
   return cells;
 }
 
@@ -88,14 +114,23 @@ function parseTable(state: EditorState, tableNode: SyntaxNode): TableModel | nul
   return { header, rows };
 }
 
-function serializeTable(model: TableModel): string {
+// Escape cell content so it can't break the row's GFM structure: an
+// unescaped `|` would split the cell into two columns, and a stray
+// newline would terminate the table. A pipe that's already escaped
+// (`\|` — e.g. round-tripping content the parser handed us) is left
+// alone so serialize is idempotent.
+function escapeCell(text: string): string {
+  return text.replace(/\r?\n/g, ' ').replace(/(?<!\\)\|/g, '\\|');
+}
+
+export function serializeTable(model: TableModel): string {
   const columnCount = model.header.length;
   const lines: string[] = [];
-  lines.push('| ' + model.header.join(' | ') + ' |');
+  lines.push('| ' + model.header.map(escapeCell).join(' | ') + ' |');
   lines.push('| ' + model.header.map(() => '---').join(' | ') + ' |');
   for (const row of model.rows) {
     const padded: string[] = [];
-    for (let c = 0; c < columnCount; c++) padded.push(row[c] ?? '');
+    for (let c = 0; c < columnCount; c++) padded.push(escapeCell(row[c] ?? ''));
     lines.push('| ' + padded.join(' | ') + ' |');
   }
   return lines.join('\n');
@@ -149,7 +184,7 @@ type CellToken =
   | { type: 'strike'; children: CellToken[] }
   | { type: 'link'; textChildren: CellToken[]; url: string };
 
-function parseCellInline(raw: string): CellToken[] {
+export function parseCellInline(raw: string): CellToken[] {
   const tokens: CellToken[] = [];
   let textBuf = '';
   let i = 0;
@@ -335,6 +370,16 @@ function renderCellToken(tok: CellToken): Node {
   urlMark.classList.add('cm-atomic-link-url');
   wrap.appendChild(urlMark);
   wrap.appendChild(makeCellMark(')'));
+  // Real, clickable external-link icon. A CSS `::after` pseudo can't
+  // receive a click (no event target), so the icon is its own
+  // non-editable element; the source's delegated click handler opens
+  // the URL. `contenteditable=false` keeps it out of caret navigation
+  // and out of the cell's serialized text.
+  const icon = document.createElement('span');
+  icon.className = 'cm-atomic-link-icon';
+  icon.contentEditable = 'false';
+  icon.setAttribute('aria-hidden', 'true');
+  wrap.appendChild(icon);
   return wrap;
 }
 
@@ -653,24 +698,61 @@ function makeCell(
   cell.appendChild(source);
   renderCellSourceDecorated(source);
 
-  source.addEventListener('input', () => {
-    // textContent (not innerText) so `display: none` delimiters
-    // inside mark wraps are still captured — otherwise a cell
-    // containing `**bold**` would serialize to just `bold` and the
-    // marks would vanish on every keystroke.
+  // Commit the cell's current DOM text to `dataset.raw`, re-render its
+  // decorated form (so marks the user just typed — e.g. a new `**` pair
+  // — decorate immediately), restore the caret across that rebuild, and
+  // push the change into the document.
+  const commit = () => {
+    // textContent (not innerText) so `display: none` delimiters inside
+    // mark wraps are still captured — otherwise a cell containing
+    // `**bold**` would serialize to just `bold` on every keystroke.
     const raw = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
     cell.dataset.raw = raw;
-
-    // Re-parse + re-render so marks the user typed (e.g. a new pair
-    // of `**`) decorate immediately. Caret offset preserved across
-    // the DOM rebuild.
     const offset = getCaretCharOffset(source);
     renderCellSourceDecorated(source);
     if (offset != null) setCaretCharOffset(source, offset);
     updateActiveMarkForSource(source);
-
     refreshCellPreview(cell);
     dispatchModelFromDom(view, cell);
+  };
+
+  // IME / dead-key composition. `commit` rebuilds the contenteditable
+  // DOM, and doing that mid-composition cancels the composition session
+  // — dropping CJK input, accented characters, and dictation. Suppress
+  // every update while composing and run one commit when it ends.
+  let composing = false;
+  source.addEventListener('compositionstart', () => {
+    composing = true;
+  });
+  source.addEventListener('compositionend', () => {
+    composing = false;
+    commit();
+  });
+
+  source.addEventListener('input', (event) => {
+    if (composing || (event as InputEvent).isComposing) return;
+    commit();
+  });
+
+  // Paste: drop clipboard content in as a single line of plain text.
+  // Without this, pasted rich HTML, newlines, or pipes land in the cell
+  // verbatim; newlines and `|` corrupt the row. We flatten whitespace
+  // and strip markup here, and `escapeCell` neutralizes any literal `|`
+  // on serialize.
+  source.addEventListener('paste', (event) => {
+    event.preventDefault();
+    const text = (event.clipboardData?.getData('text/plain') ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const sel = source.ownerDocument.defaultView?.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    commit();
   });
 
   // Caret-position listeners. `focus` / `mouseup` / `keyup` cover the
@@ -686,7 +768,10 @@ function makeCell(
   source.addEventListener('blur', () => clearActiveMarksInSource(source));
 
   source.addEventListener('keydown', (event) => {
-    if (event.key === 'Tab') {
+    // Enter mirrors Tab — advance to the next cell (appending a row past
+    // the last one) instead of inserting a line break a single-line cell
+    // can't represent. Shift reverses direction for both.
+    if (event.key === 'Tab' || event.key === 'Enter') {
       event.preventDefault();
       event.stopPropagation();
       moveCellFocus(view, cell, event.shiftKey ? -1 : 1);
@@ -699,39 +784,31 @@ function makeCell(
     openCellMenu(view, cell, event.clientX, event.clientY);
   });
 
-  // Link-icon click: in the unfocused (decorated) state, a click
-  // inside a `.cm-atomic-link` span's trailing external-link icon
-  // zone should open the URL instead of placing the caret. Matches
-  // the outer-editor click handler's icon-zone convention so users
-  // get a consistent affordance inside and outside tables.
-  //
-  // `pointerdown` (not click) so we can `preventDefault` to block
-  // focus + caret placement before the browser reacts.
+  // Link-icon open. The external-link icon is rendered as a real
+  // `.cm-atomic-link-icon` element (see `renderCellToken`), not a CSS
+  // `::after` pseudo — a pseudo-element has no event target, so clicking
+  // its painted region dispatched no pointer event and the link never
+  // opened. We open on `click` (a proper popup-activation gesture, so
+  // `window.open` isn't blocked) and block the caret on `pointerdown`.
+  const linkIconFromEvent = (event: Event): HTMLElement | null => {
+    const target = event.target;
+    if (!(target instanceof Element)) return null;
+    return target.closest<HTMLElement>('.cm-atomic-link-icon');
+  };
+
   source.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
+    // Block focus / caret placement when pressing the icon; the open
+    // happens on the following `click`.
+    if (linkIconFromEvent(event)) event.preventDefault();
+  });
+
+  source.addEventListener('click', (event) => {
+    const icon = linkIconFromEvent(event);
+    if (!icon) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const linkWrap = target.closest<HTMLElement>('.cm-atomic-link-wrap');
-    if (!linkWrap) return;
-    const linkEl = linkWrap.querySelector<HTMLElement>('.cm-atomic-link');
-    if (!linkEl) return;
-
-    const rects = Array.from(linkEl.getClientRects());
-    if (rects.length === 0) return;
-    const lastRect = rects[rects.length - 1];
-    const emSize = parseFloat(window.getComputedStyle(linkEl).fontSize);
-    const iconZone = emSize * 1.25;
-    const onIcon =
-      event.clientX >= lastRect.right - iconZone &&
-      event.clientX <= lastRect.right &&
-      event.clientY >= lastRect.top &&
-      event.clientY <= lastRect.bottom;
-    if (!onIcon) return;
-
-    const url = linkWrap.dataset.url;
+    const url = icon.closest<HTMLElement>('.cm-atomic-link-wrap')?.dataset.url;
     if (!url) return;
-
     event.preventDefault();
     event.stopPropagation();
     view.state.facet(tableLinkClickFacet)(url);
@@ -745,7 +822,14 @@ function makeCell(
   // covers only image hits — this covers empty padding and the
   // space between/around images.
   cell.addEventListener('pointerdown', (event) => {
-    if (event.target === source) return;
+    // A click on the editable source — including its inner mark spans
+    // and text — must keep the browser's native caret placement. Forcing
+    // focus-at-end here would yank the caret to the end of the cell
+    // whenever the user clicks a styled run (bold/italic/link). Only
+    // intercept clicks that land OUTSIDE the source (cell padding, the
+    // image preview, the cell box itself) to route focus into it.
+    const target = event.target;
+    if (target instanceof Node && source.contains(target)) return;
     event.preventDefault();
     source.focus();
     placeCaretAtEnd(source);
@@ -929,6 +1013,10 @@ function dispatchModelFromDom(view: EditorView, cell: HTMLElement): void {
 
   view.dispatch({
     changes: { from: range.from, to: range.to, insert: next },
+    // Tag as typing so CM6's history coalesces consecutive cell edits
+    // into one undo group instead of one step per keystroke (each of
+    // which rewrites the whole table range).
+    annotations: Transaction.userEvent.of('input.type'),
   });
 }
 

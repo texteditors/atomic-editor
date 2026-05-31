@@ -651,6 +651,344 @@ async function probeCloseBrackets(page) {
   );
 }
 
+async function scrollToInlineMarksTable(page) {
+  return scrollUntil(page, () =>
+    Array.from(document.querySelectorAll('.cm-atomic-table')).some((w) =>
+      (w.textContent || '').includes('struck text'),
+    ),
+  );
+}
+
+function inlineMarksTableDims(page) {
+  return page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    return w
+      ? {
+          cols: w.querySelectorAll('thead th').length,
+          rows: w.querySelectorAll('tbody tr').length,
+        }
+      : null;
+  });
+}
+
+// Exercises the contenteditable cell behaviors the unit tests can't
+// reach: typing a literal pipe must not corrupt the row, Enter must
+// advance to the next cell, and clicking a styled run must place the
+// caret where clicked (not jump to the cell end).
+async function probeTableCellEditing(page) {
+  // --- a literal `|` typed in a cell must not split / corrupt the row ---
+  await resetToCanonical(page);
+  if (!(await scrollToInlineMarksTable(page))) {
+    record('table cell: pipe does not corrupt row', 'fail', 'table not found');
+    return;
+  }
+  const before = await inlineMarksTableDims(page);
+  await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    const src = w
+      .querySelectorAll('tbody tr')[0]
+      .querySelectorAll('td')[0]
+      .querySelector('.cm-atomic-table-cell-source');
+    src.focus();
+    const r = document.createRange();
+    r.selectNodeContents(src);
+    r.collapse(false);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  });
+  await page.keyboard.type('|x');
+  await page.waitForTimeout(400);
+  const after = await inlineMarksTableDims(page);
+  const cellHasPipe = await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    if (!w) return false;
+    const td0 = w.querySelectorAll('tbody tr')[0].querySelectorAll('td')[0];
+    return (td0?.dataset.raw || '').includes('|');
+  });
+  const pipeOk =
+    after && after.cols === before.cols && after.rows === before.rows && cellHasPipe;
+  record(
+    'table cell: pipe does not corrupt row',
+    pipeOk ? 'pass' : 'fail',
+    `before=${before?.cols}x${before?.rows} after=${after ? `${after.cols}x${after.rows}` : 'GONE'} cellKeptPipe=${cellHasPipe}`,
+  );
+
+  // --- Enter advances to the next cell (mirrors Tab) ---
+  await resetToCanonical(page);
+  await scrollToInlineMarksTable(page);
+  const startIdx = await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    const cells = Array.from(w.querySelectorAll('th, td'));
+    const startCell = w.querySelectorAll('tbody tr')[0].querySelectorAll('td')[0];
+    startCell.querySelector('.cm-atomic-table-cell-source').focus();
+    return cells.indexOf(startCell);
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const enterResult = await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    const cells = Array.from(w.querySelectorAll('th, td'));
+    const active = document.activeElement;
+    const activeCell = active?.closest?.('th, td');
+    return {
+      idx: activeCell ? cells.indexOf(activeCell) : -2,
+      isSource: active?.classList?.contains('cm-atomic-table-cell-source') ?? false,
+    };
+  });
+  record(
+    'table cell: Enter advances to next cell',
+    enterResult.isSource && enterResult.idx === startIdx + 1 ? 'pass' : 'fail',
+    `from cell ${startIdx} → ${enterResult.idx} (source=${enterResult.isSource})`,
+  );
+
+  // --- clicking a styled run places the caret there, not at cell end ---
+  await resetToCanonical(page);
+  await scrollToInlineMarksTable(page);
+  // The cell can sit below the fold after scroll-to-table — a real mouse
+  // click only hits it if it's actually in the viewport, so center it.
+  await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    w?.querySelectorAll('tbody tr')[0]
+      .querySelectorAll('td')[1]
+      .querySelector('.cm-atomic-strong')
+      ?.scrollIntoView({ block: 'center' });
+  });
+  await page.waitForTimeout(150);
+  const boldRect = await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    const inner = w
+      .querySelectorAll('tbody tr')[0]
+      .querySelectorAll('td')[1]
+      .querySelector('.cm-atomic-strong');
+    if (!inner) return null;
+    const r = inner.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  if (!boldRect) {
+    record('table cell: click on styled run keeps caret in place', 'fail', 'no bold run');
+  } else {
+    // Click ~30% into the bold word — well short of its end.
+    await page.mouse.click(boldRect.x + boldRect.w * 0.3, boldRect.y + boldRect.h / 2);
+    await page.waitForTimeout(150);
+    const caret = await page.evaluate(() => {
+      const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+        (w) => (w.textContent || '').includes('struck text'),
+      );
+      const src = w
+        .querySelectorAll('tbody tr')[0]
+        .querySelectorAll('td')[1]
+        .querySelector('.cm-atomic-table-cell-source');
+      const sel = getSelection();
+      if (!sel || sel.rangeCount === 0 || !src.contains(sel.anchorNode)) {
+        return { ok: false };
+      }
+      const len = (src.textContent || '').length;
+      const rng = sel.getRangeAt(0).cloneRange();
+      rng.selectNodeContents(src);
+      rng.setEnd(sel.getRangeAt(0).startContainer, sel.getRangeAt(0).startOffset);
+      const offset = rng.toString().length;
+      return { ok: true, offset, len, atEnd: offset >= len };
+    });
+    record(
+      'table cell: click on styled run keeps caret in place',
+      caret.ok && !caret.atEnd ? 'pass' : 'fail',
+      `caret offset=${caret.offset}/${caret.len}${caret.atEnd ? ' (jumped to end)' : ''}`,
+    );
+  }
+
+  await resetToCanonical(page);
+}
+
+// The external-link icon in a cell must open its URL. It used to be a
+// CSS `::after` pseudo-element, which has no event target — clicking its
+// painted region dispatched no event and the link never opened. It's now
+// a real `.cm-atomic-link-icon` element opened via a delegated click.
+async function probeTableLinkIcon(page) {
+  await resetToCanonical(page);
+  if (!(await scrollToInlineMarksTable(page))) {
+    record('table cell: link icon opens URL', 'fail', 'table not found');
+    return;
+  }
+  await page.evaluate(() => {
+    window.__opened = [];
+    window.open = (u) => {
+      window.__opened.push(u);
+      return null;
+    };
+  });
+  const rect = await page.evaluate(() => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes('struck text'),
+    );
+    // Row 0, col 4 is `[example](https://example.org)`.
+    const icon = w
+      .querySelectorAll('tbody tr')[0]
+      .querySelectorAll('td')[4]
+      .querySelector('.cm-atomic-link-icon');
+    if (!icon) return null;
+    icon.scrollIntoView({ block: 'center' });
+    const r = icon.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  if (!rect) {
+    record('table cell: link icon opens URL', 'fail', 'no .cm-atomic-link-icon element');
+    return;
+  }
+  await page.mouse.click(rect.x, rect.y);
+  await page.waitForTimeout(200);
+  const opened = await page.evaluate(() => window.__opened ?? []);
+  const activeStolen = await page.evaluate(
+    () => (document.activeElement?.className || '').includes('cm-atomic-table-cell-source'),
+  );
+  record(
+    'table cell: link icon opens URL',
+    opened.length === 1 && opened[0] === 'https://example.org' && !activeStolen
+      ? 'pass'
+      : 'fail',
+    `opened=${JSON.stringify(opened)} caretStolen=${activeStolen}`,
+  );
+  await resetToCanonical(page);
+}
+
+// Right-click a table cell (header `th` or body `td`) and click a menu
+// item by label. Dispatches a real `contextmenu` event because synthetic
+// right-clicks don't reliably emit one in headless Chromium.
+async function tableMenuOp(page, anchorText, kind, index, itemLabel) {
+  const opened = await page.evaluate(
+    ({ anchorText, kind, index }) => {
+      const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+        (w) => (w.textContent || '').includes(anchorText),
+      );
+      if (!w) return false;
+      const cell =
+        kind === 'header'
+          ? w.querySelectorAll('thead th')[index]
+          : w.querySelectorAll('tbody tr')[index]?.querySelectorAll('td')[1];
+      if (!cell) return false;
+      const r = cell.getBoundingClientRect();
+      cell.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: r.x + r.width / 2,
+          clientY: r.y + r.height / 2,
+        }),
+      );
+      return true;
+    },
+    { anchorText, kind, index },
+  );
+  if (!opened) return false;
+  await page.waitForTimeout(100);
+  const clicked = await page.evaluate((itemLabel) => {
+    const btn = Array.from(
+      document.querySelectorAll('.cm-atomic-table-menu-item'),
+    ).find((b) => b.textContent === itemLabel);
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, itemLabel);
+  await page.waitForTimeout(350);
+  return clicked;
+}
+
+function tableDims(page, anchorText) {
+  return page.evaluate((anchorText) => {
+    const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
+      (w) => (w.textContent || '').includes(anchorText),
+    );
+    if (!w) return null;
+    return {
+      cols: w.querySelectorAll('thead th').length,
+      rows: w.querySelectorAll('tbody tr').length,
+    };
+  }, anchorText);
+}
+
+async function probeTableMenuOps(page) {
+  // Regression guard for the table context-menu operations. Insert
+  // column left/right used to silently no-op: they add an EMPTY column,
+  // and the table model counted columns from lezer `TableCell` nodes —
+  // which lezer doesn't emit for empty cells — so the new column was
+  // dropped on re-render even though the document was correctly updated.
+  // We run all six ops in sequence on the deterministic inline-marks
+  // table (anchored on "struck text", which the chosen targets preserve)
+  // and assert the running row/column counts. Column ops target header
+  // index 1 (keeps the Strike column); row ops target body row 1 (keeps
+  // row 0's anchor).
+  await resetToCanonical(page);
+  // The table is a block widget, so its text isn't in a `.cm-line` —
+  // detect the `.cm-atomic-table` element directly (matches the other
+  // table probes).
+  const found = await scrollUntil(page, () =>
+    Array.from(document.querySelectorAll('.cm-atomic-table')).some(
+      (w) => (w.textContent || '').includes('struck text'),
+    ),
+  );
+  if (!found) {
+    record('table menu: column/row ops apply', 'fail', 'inline-marks table not found');
+    return;
+  }
+
+  const start = await tableDims(page, 'struck text');
+  if (!start) {
+    record('table menu: column/row ops apply', 'fail', 'no dims');
+    return;
+  }
+
+  // [label, kind, index, dCols, dRows]
+  const ops = [
+    ['Insert column left', 'header', 1, +1, 0],
+    ['Insert column right', 'header', 1, +1, 0],
+    ['Delete column', 'header', 1, -1, 0],
+    ['Insert row above', 'body', 1, 0, +1],
+    ['Insert row below', 'body', 1, 0, +1],
+    ['Delete row', 'body', 1, 0, -1],
+  ];
+
+  let cols = start.cols;
+  let rows = start.rows;
+  const failures = [];
+  for (const [label, kind, index, dCols, dRows] of ops) {
+    const clicked = await tableMenuOp(page, 'struck text', kind, index, label);
+    const after = await tableDims(page, 'struck text');
+    cols += dCols;
+    rows += dRows;
+    const ok =
+      clicked && after && after.cols === cols && after.rows === rows;
+    if (!ok) {
+      failures.push(
+        `${label} → ${after ? `${after.cols}x${after.rows}` : 'GONE'} (want ${cols}x${rows})`,
+      );
+    }
+  }
+
+  record(
+    'table menu: column/row ops apply',
+    failures.length === 0 ? 'pass' : 'fail',
+    failures.length === 0
+      ? `all 6 ops applied (from ${start.cols}x${start.rows})`
+      : failures.join('; '),
+  );
+
+  await resetToCanonical(page);
+}
+
 async function probeTableFromMarkdown(page) {
   // Regression guard for "type raw table markdown → widget appears".
   // Scroll to top, click a plain paragraph line, navigate to doc end,
@@ -2021,6 +2359,9 @@ async function run() {
     await probeHorizontalRule(page);
     await probeTableWidget(page);
     await probeTableCellMarkdown(page);
+    await probeTableMenuOps(page);
+    await probeTableCellEditing(page);
+    await probeTableLinkIcon(page);
     await probeTableFromMarkdown(page);
     await probeImageBlock(page);
     await probeBackslashEscape(page);

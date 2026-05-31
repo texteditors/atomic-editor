@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.4.3]
+
+Table-editing hardening. The WYSIWYG table widget is the most custom part
+of the editor, and its DOM ⇄ markdown round-trip and contenteditable cell
+handling were hiding several bugs.
+
+### Fixed
+
+- **Insert column left/right now works.** Inserting a column adds an empty
+  cell, and the table model counted columns from lezer `TableCell` nodes —
+  which lezer doesn't emit for empty cells — so the new column was dropped
+  on re-render even though the document was updated. Columns are now counted
+  by splitting the row's raw text, so blank columns survive the round-trip.
+- **Typing a literal `|` in a cell no longer corrupts the table.** Cell
+  content is now escaped on serialize (`|` → `\|`, newlines flattened), so a
+  pipe can't split the row and shift/drop later columns.
+- **IME and dead-key composition work in cells.** The cell rebuilt its DOM on
+  every input event, which cancelled an in-progress composition — dropping
+  CJK input, accents, and dictation. Composition is now left alone until it
+  ends.
+- **Clicking a styled run (bold/italic/link) in a cell keeps the caret where
+  you clicked** instead of jumping it to the end of the cell.
+- **The external-link icon in a cell opens its URL.** It was a CSS `::after`
+  pseudo-element, which has no event target, so clicking it dispatched no
+  event. It's now a real element opened on click (a proper popup-activation
+  gesture, so `window.open` isn't blocked).
+- Pasting into a cell now inserts a single line of plain text — pasted rich
+  HTML, newlines, or pipes no longer land verbatim and corrupt the row.
+
+### Changed
+
+- **Enter in a cell now advances to the next cell** (appending a row past the
+  last one), mirroring Tab; Shift reverses direction. Previously it inserted
+  a line break the single-line cell couldn't represent.
+- Per-keystroke cell edits are tagged as input so the editor's undo history
+  coalesces them into one step instead of one per keystroke.
+
 ## [0.4.2]
 
 ### Fixed
