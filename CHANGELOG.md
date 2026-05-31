@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.4.2]
+
+### Fixed
+
+- Typing into a heading (or other line with hidden syntax) immediately after
+  clicking it no longer crashes the editor. The inline-preview plugin freezes
+  decoration rebuilds during a mouse interaction so a clicked heading's `## `
+  prefix doesn't reveal mid-click and jitter. But while frozen it skipped the
+  rebuild on doc changes too, handing CodeMirror a stale decoration set whose
+  positions no longer matched the document — the `## ` replace then spanned
+  the newly-typed line break, throwing `RangeError: Decorations that replace
+  line breaks may not be specified via plugins` and corrupting the heightmap
+  (`No tile at position …`, broken scroll-into-view, content "jumping"). The
+  freeze now still rebuilds on document changes; it only suppresses the
+  selection-driven reveal it was meant to.
+
 ## [0.4.1]
 
 ### Fixed

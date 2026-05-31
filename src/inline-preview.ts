@@ -768,7 +768,16 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
       const nextFrozen = update.state.field(previewFrozenField);
       const justUnfroze = prevFrozen && !nextFrozen;
 
-      if (nextFrozen && !justUnfroze) return;
+      // A doc change is unambiguous edit intent, so rebuild even while
+      // frozen. Returning the stale (pre-edit) decoration set here would
+      // hand CM6 ranges whose positions no longer match the document: a
+      // hidden `## ` replace can end up spanning the newly-typed text's
+      // line break ("Decorations that replace line breaks may not be
+      // specified via plugins"), and the stale positions corrupt the
+      // heightmap ("No tile at position …" → broken scrollIntoView). The
+      // freeze only needs to suppress the *selection*-driven reveal that
+      // makes a click jitter; typing should reveal syntax as normal.
+      if (nextFrozen && !justUnfroze && !update.docChanged) return;
 
       // Tree-growth effect: background parser advanced past where
       // we last walked. For docs large enough that the initial

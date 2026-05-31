@@ -82,6 +82,9 @@ function sleep(ms) {
 // ---------- logging ----------
 
 const results = [];
+// Uncaught page errors, captured so probes can assert that a given
+// interaction produced none (e.g. the type-while-frozen regression).
+const pageErrors = [];
 const COLORS = { reset: '\x1b[0m', dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', cyan: '\x1b[36m' };
 function color(c, s) {
   return process.stdout.isTTY ? `${COLORS[c]}${s}${COLORS.reset}` : s;
@@ -309,6 +312,60 @@ async function probeClickFreeze(page) {
     selLen === 0 ? 'pass' : 'fail',
     `selectionLen=${selLen}`,
   );
+}
+
+async function probeTypeDuringFreeze(page) {
+  // Regression guard for the freeze/stale-decoration crash. Clicking a
+  // heading engages the freeze (so the `## ` prefix doesn't reveal mid-
+  // click and jitter). If the user starts typing BEFORE the freeze tail
+  // expires, the inline-preview plugin used to skip its rebuild while
+  // frozen and hand CM6 a stale decoration set — positions no longer
+  // matching the doc. The hidden `## ` replace then spanned the new
+  // text's line break ("Decorations that replace line breaks may not be
+  // specified via plugins") and the stale positions corrupted the
+  // heightmap ("No tile at position …" → broken scrollIntoView). This
+  // reproduces it: hold the pointer down on a heading (freeze stays on)
+  // and type while held, then assert no uncaught errors fired.
+  const h2 = page.locator('.cm-line.cm-atomic-h2').first();
+  if ((await h2.count()) === 0) {
+    record('type-during-freeze: no decoration crash', 'fail', 'no H2 line');
+    return;
+  }
+  const box = await h2.boundingBox();
+  if (!box) {
+    record('type-during-freeze: no decoration crash', 'fail', 'no bbox');
+    return;
+  }
+
+  const before = pageErrors.length;
+  // Press and HOLD inside the heading text so the freeze flag stays
+  // engaged (pointerup + FREEZE_TAIL_MS is what releases it). Type while
+  // held — the keystrokes land squarely inside the freeze window.
+  await page.mouse.move(box.x + Math.min(box.width / 3, 80), box.y + box.height / 2);
+  await page.mouse.down();
+  await page.keyboard.type('typed while frozen');
+  await page.mouse.up();
+  // Let the freeze tail expire and any faulty measure/scroll fire.
+  await page.waitForTimeout(300);
+
+  const fired = pageErrors.slice(before);
+  const decorationCrash = fired.filter(
+    (m) =>
+      /replace line breaks/i.test(m) ||
+      /No tile at position/i.test(m) ||
+      /Cannot destructure property 'tile'/i.test(m),
+  );
+  record(
+    'type-during-freeze: no decoration crash',
+    decorationCrash.length === 0 ? 'pass' : 'fail',
+    decorationCrash.length === 0
+      ? `no errors across ${fired.length} page event(s)`
+      : `${decorationCrash.length} crash(es): ${JSON.stringify(decorationCrash[0].slice(0, 80))}`,
+  );
+
+  // This typed into a heading — restore canonical content so downstream
+  // probes that target heading text aren't perturbed.
+  await resetToCanonical(page);
 }
 
 async function probeFenceVisibility(page) {
@@ -1678,6 +1735,255 @@ async function probeCopyIsRawMarkdown(page) {
   return payload;
 }
 
+// ---------- edit-edge probes ----------
+//
+// The cold-render and small-gesture probes above verify the anti-jump
+// design on the happy path. The transitions most likely to *feel* janky
+// are the destructive edges: backspacing a fixture's first character,
+// pressing Enter inside a block's source, or deleting the markdown that
+// defines a block (a fence backtick, a heading `#`). Each flips a region
+// between its rendered and raw forms — exactly when heights change.
+//
+// These probes are DIAGNOSTIC, not pass/fail. Many of the edits
+// legitimately reflow the document (deleting a fence really does turn a
+// code block into paragraphs), so we report the CLS total, the shift
+// count, and the top shift sources rather than asserting a threshold. The
+// signal to read is the sources: shifts confined to the edited block's
+// lines are expected content reflow; shifts attributed to `.cm-content`
+// or to lines far from the edit are "the whole page jumped" — the bug.
+
+async function resetToCanonical(page) {
+  // Edits persist to localStorage (see demo/App.tsx). Clear the key and
+  // reload so each edge case starts from the pristine generated sample.
+  await page.evaluate(() => {
+    try {
+      window.localStorage.clear();
+    } catch {
+      // private mode / sandbox — nothing to clear
+    }
+  });
+  await page.goto(`${base}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('.cm-editor');
+  await page.waitForTimeout(300);
+}
+
+async function scrollUntil(page, predicate, arg, maxSteps = 16) {
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.waitForTimeout(120);
+  for (let i = 0; i < maxSteps; i++) {
+    if (await page.evaluate(predicate, arg)) return true;
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 300;
+    });
+    await page.waitForTimeout(100);
+  }
+  return false;
+}
+
+async function ensureFenceVisible(page) {
+  await page.locator('.cm-scroller').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.waitForTimeout(120);
+  for (let i = 0; i < 12; i++) {
+    if ((await page.locator('.cm-line.cm-atomic-fenced-code').count()) >= 3) {
+      return true;
+    }
+    await page.locator('.cm-scroller').evaluate((el) => {
+      el.scrollTop += 350;
+    });
+    await page.waitForTimeout(100);
+  }
+  return false;
+}
+
+// Click a line at a fractional horizontal offset and drop the caret there.
+// First scroll the target to viewport center: with the caret already
+// comfortably visible, a well-behaved edit shouldn't move the scroll at
+// all, so any large scrollΔ measured afterward is a genuine jump rather
+// than a legitimate recenter of a caret that started at the edge.
+async function clickLine(page, locator, frac = 0.1) {
+  let box = await locator.boundingBox();
+  if (!box) return false;
+  const scroller = page.locator('.cm-scroller');
+  const sc = await scroller.boundingBox();
+  if (sc) {
+    const delta = box.y + box.height / 2 - (sc.y + sc.height / 2);
+    if (Math.abs(delta) > 1) {
+      await scroller.evaluate((el, d) => {
+        el.scrollTop += d;
+      }, delta);
+      await page.waitForTimeout(150);
+      box = await locator.boundingBox();
+      if (!box) return false;
+    }
+  }
+  await page.mouse.click(box.x + Math.max(8, box.width * frac), box.y + box.height / 2);
+  await page.waitForTimeout(120);
+  return true;
+}
+
+// Run one destructive edit on a pristine fixture and report the CLS it
+// produced. `prepare` must locate the fixture and leave the caret at the
+// edit site (returning truthy on success); `action` performs the keypress
+// whose layout cost we measure.
+async function runEdge(page, name, prepare, action, durationMs = 1000) {
+  await resetToCanonical(page);
+  const ready = await prepare(page);
+  if (!ready) {
+    record(name, 'fail', 'could not locate / position fixture');
+    return null;
+  }
+  // Settle so the caret placement itself isn't inside the measurement
+  // window — we want only the edit's effect, not the click's scroll.
+  await page.waitForTimeout(150);
+  // CLS measures element layout shift within the viewport; it does NOT
+  // see the viewport itself lurching. Bracket the edit with scrollTop
+  // reads so a `scrollIntoView` / heightmap re-estimate that yanks the
+  // scroll position shows up as a non-zero scrollΔ even when CLS is 0.
+  const scrollBefore = await page
+    .locator('.cm-scroller')
+    .evaluate((el) => el.scrollTop);
+  const cls = await measureCLS(page, durationMs, () => action(page));
+  const scrollAfter = await page
+    .locator('.cm-scroller')
+    .evaluate((el) => el.scrollTop);
+  const scrollDelta = Math.round(scrollAfter - scrollBefore);
+  const sources = topShiftSources(cls.entries, 5);
+  record(
+    name,
+    'info',
+    `CLS=${cls.total.toFixed(3)} scrollΔ=${scrollDelta}px shifts=${cls.count}${sources ? ` sources=${sources}` : ''}`,
+  );
+  return { cls, scrollDelta };
+}
+
+async function probeEditEdges(page) {
+  // --- Enter within fixtures ---
+
+  // Enter on an interior code line — adds a line inside the fence. Content
+  // below shifts down by one line height (unavoidable); the read is
+  // whether anything ABOVE the fence moves or the fence itself jumps.
+  await runEdge(
+    page,
+    'edge: Enter inside fenced code interior',
+    async (p) => {
+      if (!(await ensureFenceVisible(p))) return false;
+      const interior = p.locator('.cm-line.cm-atomic-fenced-code').nth(1);
+      if (!(await clickLine(p, interior, 0.2))) return false;
+      await p.keyboard.press('End');
+      return true;
+    },
+    (p) => p.keyboard.press('Enter'),
+  );
+
+  // Enter in the middle of a heading — splits it; the tail becomes a
+  // paragraph (smaller line height than the heading).
+  await runEdge(
+    page,
+    'edge: Enter mid-heading',
+    async (p) => {
+      if (!(await scrollUntil(p, hasLineWithText, 'And the usual markdown'))) return false;
+      const h2 = p
+        .locator('.cm-line.cm-atomic-h2', { hasText: 'And the usual markdown' })
+        .first();
+      return clickLine(p, h2, 0.4);
+    },
+    (p) => p.keyboard.press('Enter'),
+  );
+
+  // --- Remove markdown / fence ---
+
+  // Delete the first backtick of the opening fence. ``` -> `` is no longer
+  // a fence, so the whole block re-parses from code to paragraphs.
+  await runEdge(
+    page,
+    'edge: delete backtick from opening fence',
+    async (p) => {
+      if (!(await ensureFenceVisible(p))) return false;
+      const open = p.locator('.cm-line.cm-atomic-fenced-code').nth(0);
+      if (!(await clickLine(p, open, 0.05))) return false;
+      await p.keyboard.press('Home');
+      return true;
+    },
+    (p) => p.keyboard.press('Delete'),
+  );
+
+  // Delete one `#` from an H2 (`## ` -> `# `), promoting it to a taller H1
+  // and pushing everything below down.
+  await runEdge(
+    page,
+    'edge: delete `#` from heading (H2->H1)',
+    async (p) => {
+      if (!(await scrollUntil(p, hasLineWithText, 'And the usual markdown'))) return false;
+      const h2 = p
+        .locator('.cm-line.cm-atomic-h2', { hasText: 'And the usual markdown' })
+        .first();
+      if (!(await clickLine(p, h2, 0.4))) return false;
+      await p.keyboard.press('Home');
+      return true;
+    },
+    (p) => p.keyboard.press('Delete'),
+  );
+
+  // --- Backspace into fixtures ---
+
+  // Backspace at the start of the opening fence line, joining it onto the
+  // preceding intro paragraph. The fence marker is no longer at line
+  // start, so the code block collapses into prose.
+  await runEdge(
+    page,
+    'edge: backspace fence opener into prior paragraph',
+    async (p) => {
+      if (!(await ensureFenceVisible(p))) return false;
+      const open = p.locator('.cm-line.cm-atomic-fenced-code').nth(0);
+      if (!(await clickLine(p, open, 0.05))) return false;
+      await p.keyboard.press('Home');
+      return true;
+    },
+    (p) => p.keyboard.press('Backspace'),
+  );
+
+  // Backspace at the start of a block image's source line. Merging it onto
+  // the previous line turns a block image into an inline one, collapsing
+  // the reserved widget height.
+  await runEdge(
+    page,
+    'edge: backspace into image source line',
+    async (p) => {
+      if (!(await scrollUntil(p, () => document.querySelector('.cm-atomic-image') !== null)))
+        return false;
+      // Click the widget to reveal its `![alt](url)` source line.
+      await p.locator('.cm-atomic-image').first().click({ position: { x: 40, y: 40 } });
+      await p.waitForTimeout(200);
+      const source = p
+        .locator('.cm-line')
+        .filter({ hasText: '](http' })
+        .filter({ hasText: '![' })
+        .first();
+      if ((await source.count()) === 0) return false;
+      if (!(await clickLine(p, source, 0.05))) return false;
+      await p.keyboard.press('Home');
+      return true;
+    },
+    (p) => p.keyboard.press('Backspace'),
+  );
+
+  // Leave the demo on pristine content so a human opening it after a run
+  // doesn't inherit the last case's destructive edit.
+  await resetToCanonical(page);
+}
+
+// Page-scoped predicate (passed to page.evaluate) — true when some
+// rendered `.cm-line` contains the given substring.
+function hasLineWithText(s) {
+  return Array.from(document.querySelectorAll('.cm-line')).some(
+    (el) => (el.textContent || '').includes(s),
+  );
+}
+
 // ---------- driver ----------
 
 async function run() {
@@ -1686,7 +1992,10 @@ async function run() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   context.on('weberror', (err) => log('warn', `page weberror: ${err.error().message}`));
   const page = await context.newPage();
-  page.on('pageerror', (err) => log('warn', `pageerror: ${err.message}`));
+  page.on('pageerror', (err) => {
+    pageErrors.push(err.message);
+    log('warn', `pageerror: ${err.message}`);
+  });
   page.on('console', (msg) => {
     if (msg.type() === 'error') log('warn', `console.error: ${msg.text()}`);
   });
@@ -1702,6 +2011,7 @@ async function run() {
     // Must run before any probe that focuses/clicks the editor.
     await probeColdLoadH1Hidden(page);
     await probeClickFreeze(page);
+    await probeTypeDuringFreeze(page);
     await probeFenceVisibility(page);
     await probeNewBulletList(page);
     await probeNestedListExit(page);
@@ -1723,6 +2033,8 @@ async function run() {
     await probeCopyIsRawMarkdown(page);
     await probeDeepScrollRenders(page);
     await probeScroll(page);
+    // Destructive edge edits — run last; each resets the doc to canonical.
+    await probeEditEdges(page);
 
     const failCount = results.filter((r) => r.status === 'fail').length;
     const warnCount = results.filter((r) => r.status === 'warn').length;
