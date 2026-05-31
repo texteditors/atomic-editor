@@ -641,12 +641,24 @@ function defaultSearchPanel(view: EditorView): Panel {
         return;
       }
       let n = 0;
+      let capped = false;
       const cursor = query.getCursor(view.state.doc);
       while (!cursor.next().done) {
         n++;
-        if (n > 9999) break; // sanity cap for pathological regexes
+        if (n >= 10000) {
+          // Sanity cap for pathological regexes. Show "9999+" rather
+          // than a misleadingly-exact count we know is truncated.
+          capped = true;
+          break;
+        }
       }
-      count.textContent = n === 0 ? 'No matches' : n === 1 ? '1 match' : `${n} matches`;
+      count.textContent = capped
+        ? '9999+ matches'
+        : n === 0
+          ? 'No matches'
+          : n === 1
+            ? '1 match'
+            : `${n} matches`;
     } catch {
       // Regex compile failure — leave the counter blank; user will
       // see the input lacks its "valid" state via the container class.

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.4.0]
+
+### Added
+
+- `TablesConfig` is now exported from the package entry, so consumers passing
+  `onLinkClick` to `tables()` can import the option type (the sibling
+  `InlinePreviewConfig` and wiki-link types were already exported).
+- The light theme now defines `--atomic-editor-accent-soft` and
+  `--atomic-editor-initial-reveal-bg` / `-strong`. These were referenced but
+  unset under `[data-theme="light"]`, so the blockquote rail and the
+  reveal-on-arrival highlight previously borrowed dark-tuned values on a pale
+  backdrop.
+
+### Changed
+
+- **Default link color** shifted from a standalone blue to an indigo that
+  coordinates with the violet accent (`--atomic-editor-link` `#818cf8`,
+  `--atomic-editor-link-hover` `#a5b4fc`; light mode uses violet). Set those
+  variables to restore any previous color.
+- Fenced code blocks now render with a subtle left rail so the block reads as
+  a contained unit. The rail is an inset box-shadow, so line-box geometry (and
+  CM6's height measurement) is unchanged.
+- Inline-preview decorations are now built in a single syntax-tree walk per
+  update instead of two, lowering the per-keystroke cost on large documents.
+  No behavioral change.
+
+### Fixed
+
+- Mid-typing emphasis no longer flashes false italic inside intra-word
+  underscores (e.g. `snake_case_var`), matching CommonMark's flanking rules.
+- The find panel's match counter now reads `9999+` past its cap instead of a
+  misleadingly exact count.
+- Wiki-link resolution results are now capped (LRU by insertion), so a long
+  session that scrolls through many distinct targets no longer grows the cache
+  without bound.
+
 ## [0.3.0]
 
 ### Added

@@ -375,6 +375,14 @@ export function generateSampleMarkdown(
       ].join('\n'),
     );
   }
+  // 4. Wiki links — a flagship 0.3.0 feature. Folded into the hero (no
+  // separate H1) so the document reads as one coherent page. The
+  // `demo-*` targets line up with the resolver/suggester wired in the
+  // demo App, so these render as resolved links and autocomplete works.
+  sections.push(
+    'Wiki links connect notes. Type `[[` for autocomplete, and Cmd/Ctrl-click a rendered link to open it — inside inline code it stays raw:',
+    'Labeled: [[demo-project-atlas|Project Atlas]] · Bare: [[demo-meeting-notes]] · In code: `[[demo-project-atlas]]`',
+  );
   // Secondary section — a deliberate "read the prose" zone after
   // the hero trio. Sets context for what the editor can do with
   // ordinary text: headings, emphasis, escapes, collapsed links.

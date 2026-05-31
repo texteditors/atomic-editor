@@ -53,6 +53,11 @@ interface WikiLinkCompletion extends Completion {
 
 const WIKI_LINK_QUERY_RE = /\[\[[^\]\n|]*$/;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+// Cap on cached resolutions so a long session scrolling through many
+// distinct wiki-link targets doesn't grow the map without bound. The
+// resolver re-fetches any target that gets evicted and later returns
+// to the viewport, so eviction only costs an occasional re-resolve.
+const MAX_RESOLVED_ENTRIES = 600;
 const wikiLinkResolved = StateEffect.define<ResolutionPayload>();
 
 class WikiLinkWidget extends WidgetType {
@@ -157,6 +162,16 @@ export function wikiLinks(config: WikiLinksConfig = {}): Extension {
         if (resolved === value.resolved) resolved = new Map(value.resolved);
         resolved.set(effect.value.target, effect.value.resolved);
         resolutionChanged = true;
+      }
+
+      // Evict oldest insertions (Map preserves insertion order) once the
+      // cache exceeds the cap, keeping memory flat across long sessions.
+      if (resolutionChanged && resolved.size > MAX_RESOLVED_ENTRIES) {
+        let overflow = resolved.size - MAX_RESOLVED_ENTRIES;
+        for (const key of resolved.keys()) {
+          if (overflow-- <= 0) break;
+          resolved.delete(key);
+        }
       }
 
       if (transaction.docChanged || transaction.selection || resolutionChanged) {

@@ -1,28 +1,44 @@
 # Atomic Editor
 
-**A CodeMirror 6 markdown editor with Obsidian-style inline live preview.**
-Renders headings, bold, italic, links, images, and tables WYSIWYG while
-keeping the raw markdown as the source of truth — so copy, save, and
-interop with any other markdown tool Just Works.
+**Obsidian-style live preview for [CodeMirror 6](https://codemirror.net/), in React.**
 
-Originally built for [Atomic](https://github.com/kenforthewin/atomic),
-a personal knowledge base, now standalone.
+[![npm version](https://img.shields.io/npm/v/@atomic-editor/editor?color=7c3aed&labelColor=2d2d2d)](https://www.npmjs.com/package/@atomic-editor/editor)
+[![license](https://img.shields.io/npm/l/@atomic-editor/editor?color=7c3aed&labelColor=2d2d2d)](./LICENSE)
 
-- **Virtualized**: CM6 renders only the viewport. Open a 500-page atom
-  instantly; scrolling stays smooth even on iOS.
-- **Layout-stable**: no reflow when you click into a heading or move
-  the cursor. Inline decorations rather than block-level widget swaps.
-- **WYSIWYG tables**: click into a cell to edit in place; wide tables
-  scroll horizontally inside a contained wrapper.
-- **Smart lists**: Enter continues tight bullets and task checkboxes,
-  Enter on an empty item dedents, `- [ ]` becomes a real checkbox.
-- **Fenced code highlighting** for 20+ languages, lazy-loaded per
-  fence so unused grammars never hit the wire.
-- **Theme with CSS variables** — dark by default, light via a single
-  `data-theme="light"` attribute.
-- **Minimal search panel** (Ctrl/Cmd+F) styled to match the editor.
+A markdown editor where formatting renders as you type — headings, bold,
+tables, images, task lists — while the text underneath stays plain markdown.
+The document you read is the document you edit: no split preview, no mode
+toggle, and copy / save / round-trip behave exactly like a plain textarea
+full of markdown.
 
-[**Live demo →**](https://kenforthewin.github.io/atomic-editor/)
+It's the writing surface behind
+[**Atomic**](https://github.com/kenforthewin/atomic), a personal knowledge
+base — extracted to stand on its own, and hardened on real user documents.
+
+[**Try the live demo →**](https://kenforthewin.github.io/atomic-editor/)
+
+## Features
+
+- **Live preview, not a preview pane.** Headings, emphasis, links, images,
+  and tables render inline; the raw syntax appears only on the line your
+  cursor is on, then tucks itself away when you move on.
+- **Raw markdown is the source of truth.** Every decoration is view-only, so
+  copy, save, and round-trip through any other markdown tool are byte-for-byte
+  identical to a plain textarea.
+- **Virtualized and layout-stable.** CM6 renders only the viewport, and lines
+  never reflow when you click into them — open a 500-page document and scroll
+  stays smooth, even on iOS.
+- **WYSIWYG tables.** Click a cell to edit in place; wide tables scroll
+  horizontally inside a contained wrapper instead of stretching the page.
+- **Wiki links.** `[[target]]` / `[[target|label]]` with async resolution,
+  autocomplete, and click-to-open — for knowledge-base-style cross-linking.
+- **Smart lists.** Enter continues tight bullets and task checkboxes, Enter on
+  an empty item dedents, and `- [ ]` becomes a real, clickable checkbox.
+- **Syntax-highlighted code** for 20+ languages, each grammar lazy-loaded the
+  first time a fence uses it so unused languages never hit the wire.
+- **Themed with CSS variables** — dark by default, light via a single
+  `data-theme="light"` attribute, every color overridable.
+- **Minimal find panel** (Ctrl/Cmd+F) styled to match the editor.
 
 ## Install
 
@@ -172,6 +188,34 @@ const codeLanguages = [
 <AtomicCodeMirrorEditor markdownSource={'…'} codeLanguages={codeLanguages} />
 ```
 
+## Wiki links
+
+`[[target]]` and `[[target|label]]` links — the way Atomic and Obsidian
+cross-link notes — ship as a composable extension. It renders labeled links,
+resolves bare targets asynchronously (to show a real title and a
+resolved / missing state), opens links on click, and offers autocomplete as
+soon as you type `[[`:
+
+```tsx
+import { AtomicCodeMirrorEditor, wikiLinks } from '@atomic-editor/editor';
+
+<AtomicCodeMirrorEditor
+  markdownSource={'See [[atom-42|the design doc]] for details.'}
+  extensions={[
+    wikiLinks({
+      suggest: async (query) => store.search(query),     // autocomplete source
+      resolve: async (target) => store.resolve(target),  // label + status for bare links
+      onOpen: (target) => router.open(target),           // click / Cmd-click to navigate
+    }),
+  ]}
+/>;
+```
+
+Draft links stay editable while the cursor is inside them; resolution is
+debounced and cached. See [`src/wiki-links.ts`](./src/wiki-links.ts) for the
+full config — custom serialization, resolver policies, suggestion limits, and
+the `WikiLinkSuggestion` / `WikiLinkResolvedTarget` types.
+
 ## Theming
 
 Every color, font, and size reads from a CSS custom property with an
@@ -202,8 +246,9 @@ re-maps the same variables.
 | `--atomic-editor-border`              | `#3d3d3d`                                           |
 | `--atomic-editor-accent`              | `#7c3aed`                                           |
 | `--atomic-editor-accent-bright`       | `#a78bfa`                                           |
-| `--atomic-editor-link`                | `#60a5fa`                                           |
-| `--atomic-editor-link-hover`          | `#93c5fd`                                           |
+| `--atomic-editor-accent-soft`         | blockquote rail / reveal tint                       |
+| `--atomic-editor-link`                | `#818cf8`                                           |
+| `--atomic-editor-link-hover`          | `#a5b4fc`                                           |
 | `--atomic-editor-code-bg`             | subtle dark panel                                   |
 | `--atomic-editor-selection-bg`        | accent-tinted 28%                                   |
 | `--atomic-editor-search-bg`           | accent-tinted 28%                                   |
@@ -228,25 +273,26 @@ re-maps the same variables.
 CodeMirror 6 is extension-based, and so is this package. Pass any
 number of CM6 extensions via the `extensions` prop to layer in
 autocomplete sources, custom decorations, domain-specific keymaps,
-collaboration (yjs), vim mode, or anything else:
+collaboration (yjs), vim mode, or anything else. (The
+[wiki-links](#wiki-links) extension above is built with exactly this hook.)
 
 ```tsx
 import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
 
-const wikiLinks = autocompletion({
+const hashtags = autocompletion({
   override: [(ctx: CompletionContext) => {
-    const match = ctx.matchBefore(/\[\[\w*$/);
+    const match = ctx.matchBefore(/#\w*$/);
     if (!match) return null;
     return {
-      from: match.from + 2,
-      options: myAtomStore.list().map((a) => ({ label: a.title })),
+      from: match.from + 1,
+      options: myTagStore.list().map((tag) => ({ label: tag })),
     };
   }],
 });
 
 <AtomicCodeMirrorEditor
   markdownSource={'…'}
-  extensions={[wikiLinks]}
+  extensions={[hashtags]}
 />
 ```
 
@@ -265,6 +311,7 @@ import {
   inlinePreview, // live preview decorations
   imageBlocks,   // rendered image widgets
   tables,        // WYSIWYG table widget
+  wikiLinks,     // [[...]] links
   atomicEditorTheme,
   atomicMarkdownSyntax,
   extendEmphasisPair,
@@ -293,9 +340,10 @@ rationale. Short version:
   paragraph in a 50KB doc costs O(change size), not O(doc).
 - **Mouse-freeze guard.** Clicks don't trigger a decoration rebuild
   mid-interaction — eliminates a class of cursor-drift bugs.
-- **iOS-aware.** Momentum scroll halts were investigated and fixed;
-  the `MinimalCodeMirrorEditor` and `NoPreviewCodeMirrorEditor` flavors
-  in the demo exist as bisection tools for any future scroll issues.
+- **iOS-aware.** Momentum-scroll halts (image remount jank, heightmap
+  drift, anchor conflicts) were tracked down and fixed; the demo's
+  sample-size picker doubles as a stress harness for spotting any
+  regressions.
 
 ## Contributing
 
@@ -310,14 +358,18 @@ npm run test:e2e   # Playwright probe suite against the demo
 ```
 
 The Playwright suite (`scripts/test-editor.mjs`) is the primary
-regression-catching tool — ~33 probes covering CLS during idle /
-scroll / typing, click-freeze timing, block-type decorations
-(headings, lists, tasks, tables, images, fences, HRs), copy-as-raw-
-markdown, tight-list continuation, escape handling, and late-doc
-rendering via the parser-progress mechanic. Run after any change to
-the editor's extensions.
+regression-catching tool — around 50 probes covering CLS during idle /
+scroll / typing, click-freeze timing, every block-type decoration
+(headings, lists, tasks, tables, images, fences, HRs, wiki links),
+cursor-scoped link reveal, copy-as-raw-markdown, tight-list
+continuation, escape handling, and late-doc rendering via the
+parser-progress mechanic. Run after any change to the editor's
+extensions.
 
-Issues and PRs welcome.
+Because the editor ships inside [Atomic](https://github.com/kenforthewin/atomic),
+real user documents are its de-facto fuzz corpus — odd inputs (multi-line
+link titles, over-escaped RSS imports, wide tables) tend to surface there
+first, and fixes land here. Issues and PRs welcome.
 
 ## License
 

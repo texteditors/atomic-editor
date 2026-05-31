@@ -13,6 +13,7 @@ export { inlinePreview } from './inline-preview';
 export type { InlinePreviewConfig } from './inline-preview';
 export { imageBlocks } from './image-blocks';
 export { tables } from './table-widget';
+export type { TablesConfig } from './table-widget';
 export { wikiLinks } from './wiki-links';
 export type {
   WikiLinkResolvedTarget,

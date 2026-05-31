@@ -352,7 +352,6 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   const tree =
     ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state);
 
-  const taskMarkerByLine = new Map<number, number>();
   // `from` positions of Link nodes whose range overlaps a selection.
   // Link children (LinkMark/URL/LinkTitle) hide unless their parent
   // Link's `from` is in this set — i.e. the cursor has entered the
@@ -360,6 +359,21 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   // aren't included; they already have their own widget UX and the
   // line-based reveal is the right fit for `![alt](url)`.
   const activeLinkStarts = new Set<number>();
+
+  // Single pre-order walk. A tree walk visits a parent before its
+  // children, which lets us compute two pieces of look-ahead state on
+  // the way in — right before the children that depend on them:
+  //   - Fenced-code active expansion: clicking any line of a fence
+  //     activates the whole block. FencedCode is entered before its
+  //     CodeMark/CodeInfo children, so expanding activeLines here means
+  //     those children hide/reveal consistently with the block.
+  //   - activeLinkStarts: a Link is entered before its LinkMark/URL/
+  //     LinkTitle children, so recording it here makes the link-scoped
+  //     reveal rule ready when those children are processed.
+  // (A previous version ran a separate pre-pass plus a taskMarkerByLine
+  // map. Folding both into this one walk halves the per-rebuild tree
+  // traversal — meaningful because this runs on every cursor move and
+  // its cost scales with document size.)
   tree.iterate({
     enter: (node) => {
       if (node.name === 'FencedCode') {
@@ -375,9 +389,8 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         if (anyActive) {
           for (let n = firstLine; n <= lastLine; n++) activeLines.add(n);
         }
-      } else if (node.name === 'TaskMarker') {
-        taskMarkerByLine.set(doc.lineAt(node.from).number, node.from);
-      } else if (node.name === 'Link' && view.hasFocus) {
+      }
+      if (node.name === 'Link' && view.hasFocus) {
         for (const range of state.selection.ranges) {
           // Inclusive overlap: cursor sitting exactly on either
           // boundary counts as inside, matching the UX where the
@@ -388,11 +401,6 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
           }
         }
       }
-    },
-  });
-
-  tree.iterate({
-    enter: (node) => {
       const lineClass = LINE_CLASS_BY_BLOCK[node.name];
       if (lineClass) {
         const firstLine = doc.lineAt(node.from);
@@ -457,8 +465,14 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
 
       if (node.name === 'ListMark' && node.from < node.to) {
         const line = doc.lineAt(node.from);
-        const lineNum = line.number;
-        const taskFrom = taskMarkerByLine.get(lineNum);
+        // Detect a task item from the line text. ListMark is visited
+        // before the TaskMarker on its line, so a forward single-pass
+        // walk can't look the marker position up from a map; the
+        // capture group is the `- ` lead-in and its length lands
+        // taskFrom exactly on the `[` (matching TaskMarker.from).
+        const taskLead = line.text.match(/^(\s*[-*+]\s+)\[[ xX]\]/);
+        const taskFrom =
+          taskLead != null ? line.from + taskLead[1].length : undefined;
 
         // Hanging-indent every list item. Layout:
         //
@@ -657,10 +671,21 @@ function supplementMidTypingEmphasis(
 
   for (const { delim, contentCls, delimCls } of MID_TYPING_DELIMITERS) {
     const dLen = delim.length;
+    // Underscore emphasis (`_`, `__`) doesn't open intra-word under
+    // CommonMark's flanking rules — `snake_case_var` is not italic.
+    // Without this guard the supplement would flash false italic while
+    // the cursor sits between two intra-word underscores (exactly the
+    // flicker this feature exists to prevent, inverted). Asterisk
+    // delimiters have no such restriction, so only gate underscores.
+    const isUnderscore = delim === '_' || delim === '__';
     let searchFrom = 0;
     while (searchFrom < text.length) {
       const open = indexOfUnconsumed(text, delim, searchFrom, consumed);
       if (open < 0) break;
+      if (isUnderscore && open > 0 && /\w/.test(text[open - 1])) {
+        searchFrom = open + dLen;
+        continue;
+      }
       const close = indexOfUnconsumed(text, delim, open + dLen, consumed);
       if (close < 0) break;
 

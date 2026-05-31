@@ -137,11 +137,11 @@ export const atomicMarkdownHighlight = HighlightStyle.define([
   {
     tag: [t.monospace],
     fontFamily: 'var(--atomic-editor-font-mono, ui-monospace, monospace)',
-    color: 'var(--atomic-editor-link, #60a5fa)',
+    color: 'var(--atomic-editor-link, #818cf8)',
   },
 
-  { tag: t.link, color: 'var(--atomic-editor-link, #60a5fa)' },
-  { tag: t.url, color: 'var(--atomic-editor-link, #60a5fa)' },
+  { tag: t.link, color: 'var(--atomic-editor-link, #818cf8)' },
+  { tag: t.url, color: 'var(--atomic-editor-link, #818cf8)' },
 
   { tag: t.processingInstruction, color: 'var(--atomic-editor-fg-faint, #666)' },
   { tag: t.contentSeparator, color: 'var(--atomic-editor-fg-faint, #666)' },
