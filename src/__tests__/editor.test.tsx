@@ -55,4 +55,30 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(content?.textContent).toContain('bold');
     expect(content?.textContent).toContain('em');
   });
+
+  it('renders highlight syntax with the expected preview class', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'This has ==highlighted text== in it.'} />,
+    );
+
+    const highlight = host.querySelector('.cm-atomic-highlight');
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toContain('highlighted text');
+  });
+
+  it('renders highlight syntax inside table cells', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor
+        markdownSource={[
+          '| Plain | Highlight |',
+          '| --- | --- |',
+          '| text | ==glow== |',
+        ].join('\n')}
+      />,
+    );
+
+    const highlight = host.querySelector('.cm-atomic-table-cell-source .cm-atomic-highlight');
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toContain('glow');
+  });
 });

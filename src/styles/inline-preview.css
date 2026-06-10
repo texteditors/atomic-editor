@@ -157,6 +157,14 @@
   color: var(--atomic-editor-fg-muted, #888);
 }
 
+.cm-atomic-highlight {
+  background: color-mix(in srgb, var(--atomic-editor-accent-bright, #a78bfa) 20%, transparent 80%);
+  border-radius: 0.2em;
+  color: var(--atomic-editor-fg, #dcddde);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* Delimiter characters for emphasis marks we supplemented manually
  * (see `supplementMidTypingEmphasis` in inline-preview.ts). Each
  * class mirrors what an `EmphasisMark` token would pick up through
@@ -179,6 +187,11 @@
 .cm-atomic-strike-mark {
   color: var(--atomic-editor-fg-faint, #666);
   text-decoration: line-through;
+}
+
+.cm-atomic-highlight-mark {
+  color: var(--atomic-editor-fg-faint, #666);
+  background: transparent;
 }
 
 .cm-atomic-link {
@@ -457,6 +470,7 @@
 .cm-atomic-table-cell-source .cm-atomic-strong-wrap.active > .cm-atomic-mark,
 .cm-atomic-table-cell-source .cm-atomic-em-wrap.active > .cm-atomic-mark,
 .cm-atomic-table-cell-source .cm-atomic-strike-wrap.active > .cm-atomic-mark,
+.cm-atomic-table-cell-source .cm-atomic-highlight-wrap.active > .cm-atomic-mark,
 .cm-atomic-table-cell-source .cm-atomic-link-wrap.active > .cm-atomic-mark {
   display: inline;
   color: var(--atomic-editor-fg-faint, #666);
@@ -470,6 +484,14 @@
 .cm-atomic-table-cell-source .cm-atomic-link-wrap.active > .cm-atomic-link-url {
   font-family: var(--atomic-editor-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.88em;
+}
+
+.cm-atomic-table-cell-source .cm-atomic-highlight {
+  background: color-mix(in srgb, var(--atomic-editor-accent-bright, #a78bfa) 20%, transparent 80%);
+  border-radius: 0.18em;
+  color: var(--atomic-editor-fg, #dcddde);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Rendered image preview strip below the source text. Mirrors how

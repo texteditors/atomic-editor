@@ -168,7 +168,7 @@ function getCellSource(cell: HTMLElement): HTMLElement | null {
 // ---- inline-mark parsing for cell source --------------------------------
 
 // Cells render a subset of inline markdown — bold, italic, strikethrough,
-// and links. No code spans (the `|` inside a backtick would silently
+// highlight, and links. No code spans (the `|` inside a backtick would silently
 // break row parsing), no lists/blocks (cells are single-line by
 // construction), no images (handled by the separate cell-preview strip).
 //
@@ -182,6 +182,7 @@ type CellToken =
   | { type: 'strong'; delim: '**' | '__'; children: CellToken[] }
   | { type: 'em'; delim: '*' | '_'; children: CellToken[] }
   | { type: 'strike'; children: CellToken[] }
+  | { type: 'highlight'; children: CellToken[] }
   | { type: 'link'; textChildren: CellToken[]; url: string };
 
 export function parseCellInline(raw: string): CellToken[] {
@@ -249,6 +250,15 @@ function matchCellMarkAt(
   if (m) {
     return {
       token: { type: 'strike', children: parseCellInline(m[1]) },
+      end: from + m[0].length,
+    };
+  }
+
+  // Highlight.
+  m = rest.match(/^==([\s\S]+?)==/);
+  if (m) {
+    return {
+      token: { type: 'highlight', children: parseCellInline(m[1]) },
       end: from + m[0].length,
     };
   }
@@ -351,9 +361,23 @@ function renderCellToken(tok: CellToken): Node {
     return wrap;
   }
 
+  if (tok.type === 'highlight') {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-atomic-highlight-wrap';
+    wrap.appendChild(makeCellMark('=='));
+    const inner = document.createElement('span');
+    inner.className = 'cm-atomic-highlight';
+    inner.appendChild(renderTokensTo(tok.children));
+    wrap.appendChild(inner);
+    wrap.appendChild(makeCellMark('=='));
+    return wrap;
+  }
+
   // Link. Shape mirrors the outer-editor markup: `.cm-atomic-link` on
   // the visible text (picks up link color + external-link icon via
-  // `::after`), faint marks for `[`, `]`, `(`, URL, `)`. `data-url`
+  // `::after`), faint marks for `[`, `]`, `(`, URL, `)`, and highlight
+  // uses the same decorated wrapper pattern as the main editor.
+  // `data-url`
   // lets the cell-source click handler open the right URL without
   // re-parsing.
   const wrap = document.createElement('span');
