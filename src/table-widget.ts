@@ -638,6 +638,46 @@ function placeCaretAtEnd(el: HTMLElement): void {
   sel.addRange(range);
 }
 
+function placeCaretFromPoint(
+  source: HTMLElement,
+  clientX: number,
+  clientY: number,
+): boolean {
+  const doc = source.ownerDocument;
+  if (!doc) return false;
+
+  // On Mac Catalyst / WKWebView the first click into a contenteditable
+  // inside our table widget sometimes focuses and then immediately drops
+  // the caret. Resolve the click point ourselves so the initial click
+  // leaves behind a real insertion position.
+  const position = doc.caretPositionFromPoint?.(clientX, clientY);
+  if (position && position.offsetNode && source.contains(position.offsetNode)) {
+    const selection = doc.defaultView?.getSelection();
+    if (!selection) return false;
+    const range = doc.createRange();
+    range.setStart(position.offsetNode, position.offset);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }
+
+  const fallbackRange = doc.caretRangeFromPoint?.(clientX, clientY);
+  if (fallbackRange) {
+    const startContainer = fallbackRange.startContainer;
+    if (source.contains(startContainer)) {
+      const selection = doc.defaultView?.getSelection();
+      if (!selection) return false;
+      fallbackRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(fallbackRange);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function getAllCells(wrap: HTMLElement): HTMLElement[] {
   return Array.from(wrap.querySelectorAll<HTMLElement>('th, td'));
 }
@@ -830,7 +870,19 @@ function makeCell(
     if (event.button !== 0) return;
     // Block focus / caret placement when pressing the icon; the open
     // happens on the following `click`.
-    if (linkIconFromEvent(event)) event.preventDefault();
+    if (linkIconFromEvent(event)) {
+      event.preventDefault();
+      return;
+    }
+
+    if (source.contains(event.target as Node) && source.ownerDocument?.activeElement !== source) {
+      event.preventDefault();
+      source.focus();
+      if (!placeCaretFromPoint(source, event.clientX, event.clientY)) {
+        placeCaretAtEnd(source);
+      }
+      updateActiveMarkForSource(source);
+    }
   });
 
   source.addEventListener('click', (event) => {
