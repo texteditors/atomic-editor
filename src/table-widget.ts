@@ -727,17 +727,7 @@ function makeCell(
   // — decorate immediately), restore the caret across that rebuild, and
   // push the change into the document.
   const commit = () => {
-    // textContent (not innerText) so `display: none` delimiters inside
-    // mark wraps are still captured — otherwise a cell containing
-    // `**bold**` would serialize to just `bold` on every keystroke.
-    const raw = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
-    cell.dataset.raw = raw;
-    const offset = getCaretCharOffset(source);
-    renderCellSourceDecorated(source);
-    if (offset != null) setCaretCharOffset(source, offset);
-    updateActiveMarkForSource(source);
-    refreshCellPreview(cell);
-    dispatchModelFromDom(view, cell);
+    syncCellSource(source, cell, view);
   };
 
   // IME / dead-key composition. `commit` rebuilds the contenteditable
@@ -764,19 +754,12 @@ function makeCell(
   // and strip markup here, and `escapeCell` neutralizes any literal `|`
   // on serialize.
   source.addEventListener('paste', (event) => {
-    event.preventDefault();
     const text = (event.clipboardData?.getData('text/plain') ?? '')
       .replace(/\s+/g, ' ')
       .trim();
-    const sel = source.ownerDocument.defaultView?.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    range.insertNode(document.createTextNode(text));
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    commit();
+    if (!pasteTextIntoCellSource(source, cell, view, text)) return;
+    event.preventDefault();
+    event.stopPropagation();
   });
 
   // Caret-position listeners. `focus` / `mouseup` / `keyup` cover the
@@ -799,6 +782,16 @@ function makeCell(
       event.preventDefault();
       event.stopPropagation();
       moveCellFocus(view, cell, event.shiftKey ? -1 : 1);
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'v') {
+      event.preventDefault();
+      event.stopPropagation();
+      void readClipboardText().then((text) => {
+        if (!text || !source.isConnected) return;
+        pasteTextIntoCellSource(source, cell, view, text);
+      });
     }
   });
 
@@ -894,6 +887,49 @@ function dispatchModel(
   });
 }
 
+function syncCellSource(source: HTMLElement, cell: HTMLElement, view: EditorView): void {
+  const raw = (source.textContent ?? '').replace(/\s+/g, ' ').trim();
+  cell.dataset.raw = raw;
+  const offset = getCaretCharOffset(source);
+  renderCellSourceDecorated(source);
+  if (offset != null) setCaretCharOffset(source, offset);
+  updateActiveMarkForSource(source);
+  refreshCellPreview(cell);
+  dispatchModelFromDom(view, cell);
+}
+
+function insertPlainTextIntoSource(source: HTMLElement, text: string): void {
+  const selection = source.ownerDocument?.defaultView?.getSelection();
+  if (!selection || selection.rangeCount === 0 || !source.contains(selection.anchorNode)) {
+    source.appendChild(source.ownerDocument!.createTextNode(text));
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const textNode = source.ownerDocument!.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function pasteTextIntoCellSource(source: HTMLElement, cell: HTMLElement, view: EditorView, text: string): boolean {
+  if (!text) return false;
+  insertPlainTextIntoSource(source, text);
+  syncCellSource(source, cell, view);
+  return true;
+}
+
+async function readClipboardText(): Promise<string> {
+  try {
+    return await navigator.clipboard?.readText?.() ?? '';
+  } catch {
+    return '';
+  }
+}
+
 function openCellMenu(
   view: EditorView,
   cell: HTMLElement,
@@ -905,6 +941,7 @@ function openCellMenu(
   const isHeader = cell.tagName === 'TH';
   const row = cellRowIndex(cell);
   const col = cellColIndex(cell);
+  const source = getCellSource(cell);
 
   const menu = document.createElement('div');
   menu.className = 'cm-atomic-table-menu';
@@ -913,6 +950,20 @@ function openCellMenu(
 
   type MenuItem = { label: string; action: () => void } | 'separator';
   const items: MenuItem[] = [];
+
+  if (source) {
+    items.push({
+      label: 'Paste',
+      action: () => {
+        source.focus();
+        void readClipboardText().then((text) => {
+          if (!text || !source.isConnected) return;
+          pasteTextIntoCellSource(source, cell, view, text);
+        });
+      },
+    });
+    items.push('separator');
+  }
 
   if (!isHeader) {
     items.push({
