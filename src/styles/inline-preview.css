@@ -352,7 +352,7 @@
   width: 1.05em;
   height: 1.05em;
   margin: 0 0.15em 0 0;
-  vertical-align: 0.02em;
+  vertical-align: 0.1em;
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -363,6 +363,7 @@
   position: relative;
   display: inline-grid;
   place-content: center;
+  transform: translateY(-0.04em);
 }
 
 .cm-atomic-task-checkbox::after {
