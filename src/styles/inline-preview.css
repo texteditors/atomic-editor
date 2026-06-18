@@ -343,18 +343,16 @@
 }
 
 /* GFM task-list checkbox widget — replaces `[ ]` / `[x]` in a task
- * item. Width matches the list-marker wrapper (0.9em); `margin-right:
- * 0.3em` adds the breathing room between the checkbox and the item
- * text. Total footprint = 1.2em, which is what ALCOVE_EM expects in
- * inline-preview.ts (bullets and checkboxes share the same alcove so
- * first-line content aligns with wrapped-line content consistently).
- * The trailing space after `[ ]` in the source is swallowed by the
- * replace decoration. */
+ * item. Slightly larger than the bullet alcove's text width so it
+ * reads closer to Obsidian's control size, while width+margin still
+ * total 1.2em to match ALCOVE_EM in inline-preview.ts. The trailing
+ * space after `[ ]` in the source is swallowed by the replace
+ * decoration. */
 .cm-atomic-task-checkbox {
-  width: 0.9em;
-  height: 0.9em;
-  margin: 0 0.3em 0 0;
-  vertical-align: -0.15em;
+  width: 1em;
+  height: 1em;
+  margin: 0 0.2em 0 0;
+  vertical-align: -0.05em;
   accent-color: var(--atomic-editor-accent, #7c3aed);
   cursor: pointer;
 }
