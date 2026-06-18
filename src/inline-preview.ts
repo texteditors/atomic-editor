@@ -459,8 +459,8 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
       // renders escapes. The Escape node spans both characters
       // (`\` + escaped char), so we only replace the first position.
       if (node.name === 'Escape' && node.to - node.from >= 2) {
-        const lineNum = doc.lineAt(node.from).number;
-        if (!activeLines.has(lineNum)) {
+        const line = doc.lineAt(node.from);
+        if (!activeLines.has(line.number) && shouldHideEscape(node, line)) {
           pushReplace(ranges, doc, node.from, node.from + 1);
         }
       }
@@ -756,6 +756,23 @@ function indexOfUnconsumed(
     i = found + 1;
   }
   return -1;
+}
+
+function shouldHideEscape(node: { from: number; to: number }, line: { from: number; text: string }): boolean {
+  const localFrom = node.from - line.from;
+  const before = line.text.slice(0, localFrom);
+  const escapedChar = line.text.slice(localFrom + 1, localFrom + 2);
+
+  // URL-like schemes such as `http:` and `https:` occasionally get
+  // backslash-escaped by copy/paste or by external markdown sources.
+  // If we hide the backslash there, the inactive-line preview can make
+  // the URL look like it vanished. Leave those escapes visible so the
+  // raw text stays legible on blur.
+  if ((escapedChar === '/' || escapedChar === '\\') && /^[a-z][a-z0-9+.-]*:$/i.test(before)) {
+    return false;
+  }
+
+  return true;
 }
 
 const inlinePreviewPlugin = ViewPlugin.fromClass(

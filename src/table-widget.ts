@@ -785,14 +785,6 @@ function makeCell(
       return;
     }
 
-    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'v') {
-      event.preventDefault();
-      event.stopPropagation();
-      void readClipboardText().then((text) => {
-        if (!text || !source.isConnected) return;
-        pasteTextIntoCellSource(source, cell, view, text);
-      });
-    }
   });
 
   cell.addEventListener('contextmenu', (event) => {
