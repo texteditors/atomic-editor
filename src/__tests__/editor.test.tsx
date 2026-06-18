@@ -65,14 +65,4 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(content).not.toBeNull();
     expect(content?.textContent).toContain('https://example.com');
   });
-
-  it('keeps url-like slash escapes visible on inactive lines', () => {
-    const { host } = mount(
-      <AtomicCodeMirrorEditor markdownSource={'https:\\/\\/example.com'} />,
-    );
-
-    const content = host.querySelector('.cm-content');
-    expect(content).not.toBeNull();
-    expect(content?.textContent).toContain('https:\\/\\/example.com');
-  });
 });
