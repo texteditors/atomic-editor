@@ -875,14 +875,19 @@ function makeCell(
       return;
     }
 
-    if (source.contains(event.target as Node) && source.ownerDocument?.activeElement !== source) {
-      event.preventDefault();
-      source.focus();
-      if (!placeCaretFromPoint(source, event.clientX, event.clientY)) {
-        placeCaretAtEnd(source);
-      }
-      updateActiveMarkForSource(source);
+    if (!(event.target instanceof Node) || !source.contains(event.target)) return;
+
+    // In Mac Catalyst a quick click inside the contenteditable can
+    // focus the cell without leaving behind a stable caret, while a
+    // long-press eventually does. Handle every normal left-click
+    // ourselves so the insertion point lands immediately and
+    // consistently, regardless of WebKit's timing.
+    event.preventDefault();
+    source.focus();
+    if (!placeCaretFromPoint(source, event.clientX, event.clientY)) {
+      placeCaretAtEnd(source);
     }
+    updateActiveMarkForSource(source);
   });
 
   source.addEventListener('click', (event) => {
