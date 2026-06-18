@@ -193,7 +193,6 @@ const HIDEABLE_SYNTAX = new Set([
   'CodeMark',
   'CodeInfo',
   'LinkMark',
-  'URL',
   'LinkTitle',
   'StrikethroughMark',
   'HighlightMark',
@@ -448,6 +447,21 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
             }
           }
           pushReplace(ranges, doc, node.from, hideTo);
+        }
+      }
+
+      if (node.name === 'URL' && node.from < node.to) {
+        const parent = node.node.parent;
+        const isLinkedUrl = parent?.name === 'Link';
+        // Bare autolink URLs are the visible text in markdown, so keep
+        // them on screen when the line is inactive. Only the URL inside
+        // an explicit `[label](url)` link should be hidden until the
+        // cursor enters the link itself.
+        if (isLinkedUrl) {
+          const lineNum = doc.lineAt(node.from).number;
+          if (!activeLines.has(lineNum)) {
+            pushReplace(ranges, doc, node.from, node.to);
+          }
         }
       }
 

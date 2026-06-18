@@ -81,4 +81,14 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(highlight).not.toBeNull();
     expect(highlight?.textContent).toContain('glow');
   });
+
+  it('keeps bare URLs visible on inactive lines', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'- https://example.com'} />,
+    );
+
+    const content = host.querySelector('.cm-content');
+    expect(content).not.toBeNull();
+    expect(content?.textContent).toContain('https://example.com');
+  });
 });
