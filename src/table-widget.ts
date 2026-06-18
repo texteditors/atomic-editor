@@ -753,13 +753,24 @@ function makeCell(
   // verbatim; newlines and `|` corrupt the row. We flatten whitespace
   // and strip markup here, and `escapeCell` neutralizes any literal `|`
   // on serialize.
+  const handlePasteIntent = (text: string, event?: Event): boolean => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!pasteTextIntoCellSource(source, cell, view, normalized)) return false;
+    event?.preventDefault();
+    event?.stopPropagation();
+    return true;
+  };
+
+  source.addEventListener('beforeinput', (event) => {
+    const input = event as InputEvent;
+    if (input.inputType !== 'insertFromPaste') return;
+    const text = input.data ?? input.dataTransfer?.getData('text/plain') ?? '';
+    if (!handlePasteIntent(text, event)) return;
+  });
+
   source.addEventListener('paste', (event) => {
-    const text = (event.clipboardData?.getData('text/plain') ?? '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!pasteTextIntoCellSource(source, cell, view, text)) return;
-    event.preventDefault();
-    event.stopPropagation();
+    const text = (event.clipboardData?.getData('text/plain') ?? '');
+    if (!handlePasteIntent(text, event)) return;
   });
 
   // Caret-position listeners. `focus` / `mouseup` / `keyup` cover the
@@ -775,6 +786,16 @@ function makeCell(
   source.addEventListener('blur', () => clearActiveMarksInSource(source));
 
   source.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
+      event.preventDefault();
+      event.stopPropagation();
+      void readClipboardText().then((text) => {
+        if (!text || !source.isConnected) return;
+        handlePasteIntent(text);
+      });
+      return;
+    }
+
     // Enter mirrors Tab — advance to the next cell (appending a row past
     // the last one) instead of inserting a line break a single-line cell
     // can't represent. Shift reverses direction for both.
@@ -949,8 +970,21 @@ function openCellMenu(
       action: () => {
         source.focus();
         void readClipboardText().then((text) => {
-          if (!text || !source.isConnected) return;
-          pasteTextIntoCellSource(source, cell, view, text);
+          if (!source.isConnected) return;
+          if (text) {
+            pasteTextIntoCellSource(source, cell, view, text);
+            return;
+          }
+          // Fallback: ask the browser to perform a native paste into the
+          // focused source. If clipboard access is unavailable to the
+          // JS bridge, this gives WKWebView / Safari one more chance to
+          // hand us the system clipboard through its built-in paste path.
+          try {
+            document.execCommand('paste');
+          } catch {
+            // Ignore. The menu action simply becomes a no-op if neither
+            // clipboard path is available.
+          }
         });
       },
     });
