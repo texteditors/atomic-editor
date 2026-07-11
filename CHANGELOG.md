@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.6.0]
+
+### Added
+
+- **Highlight syntax.** `==highlighted text==` is now parsed as a
+  first-class Markdown extension and rendered consistently in prose and
+  WYSIWYG table cells. The `highlightMarkdown` extension is exported for
+  consumers composing a custom CodeMirror setup.
+
+### Changed
+
+- Task checkboxes use a larger, theme-aware square control with improved
+  baseline alignment, text spacing, keyboard focus visibility, and a stable
+  1.2em list-marker footprint.
+
+### Fixed
+
+- Physical continuation lines in list items now hang under their owning
+  content column. Nesting depth follows parsed `ListItem` ancestry, so lazy
+  continuations, ordered-list marker-width indentation, and odd-but-valid
+  CommonMark leading spaces render consistently without changing source bytes.
+- Typing `* ` at a list-marker position consumes the emphasis auto-pair's
+  generated closer, preventing a stray trailing `*` while retaining italic and
+  bold auto-pairing and leaving code blocks untouched.
+
+### Security
+
+- Updated the development toolchain to patched Vite, Vitest, Happy DOM,
+  Babel, and `ws` releases; `npm audit` now reports zero vulnerabilities.
+
 ## [0.5.1]
 
 ### Fixed
