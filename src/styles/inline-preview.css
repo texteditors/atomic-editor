@@ -131,6 +131,16 @@
   padding-right: 0.75rem;
 }
 
+/* `drawSelection()` paints behind content, where the opaque code backdrop
+ * would cover it. A selection-only inline decoration mirrors the same token
+ * above the block background while leaving syntax-highlighted text on top. */
+.cm-atomic-fenced-selection {
+  background-color: var(
+    --atomic-editor-selection-bg,
+    color-mix(in srgb, #7c3aed 28%, #1e1e1e 72%)
+  );
+}
+
 /* Inline content marks — applied on the text inside **…**, *…*, `…`,
  * ~~…~~, [text](url). Styling only; no height changes. */
 .cm-atomic-strong {

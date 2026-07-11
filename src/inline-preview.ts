@@ -946,6 +946,62 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
   },
 );
 
+// CM6's drawSelection layer intentionally sits behind `.cm-content`. That is
+// normally ideal—the rectangle is behind the glyphs—but an opaque fenced-code
+// line background also sits between the layer and the glyphs, hiding the
+// selection completely. Mirror only the selected portions of FencedCode as
+// inline marks so their background paints above the block and below its text.
+// This plugin stays separate from inlinePreviewPlugin because mouse selection
+// must repaint live even while preview decorations are frozen for click-jitter
+// prevention.
+function fencedCodeSelectionDecorations(view: EditorView): DecorationSet {
+  const selections = view.state.selection.ranges.filter((range) => !range.empty);
+  if (selections.length === 0) return Decoration.none;
+
+  const ranges: Range<Decoration>[] = [];
+  const tree = syntaxTree(view.state);
+  for (const selection of selections) {
+    // Selection updates can arrive for every pointermove. Restrict the walk to
+    // the selected range so dragging within a short code sample stays O(range)
+    // instead of walking an entire long document on every event.
+    tree.iterate({
+      from: selection.from,
+      to: selection.to,
+      enter(node) {
+        if (node.name !== 'FencedCode') return;
+        const from = Math.max(node.from, selection.from);
+        const to = Math.min(node.to, selection.to);
+        if (from < to) {
+          ranges.push(
+            Decoration.mark({ class: 'cm-atomic-fenced-selection' }).range(from, to),
+          );
+        }
+        return false;
+      },
+    });
+  }
+  return Decoration.set(ranges, true);
+}
+
+const fencedCodeSelectionPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = fencedCodeSelectionDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.selectionSet) {
+        this.decorations = fencedCodeSelectionDecorations(update.view);
+      }
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
+  },
+);
+
 // Tight-continuation Enter for bullet lists.
 //
 // Why we override the default: @codemirror/lang-markdown's
@@ -1066,6 +1122,7 @@ export function inlinePreview(config: InlinePreviewConfig = {}): Extension {
   return [
     previewFrozenField,
     inlinePreviewPlugin,
+    fencedCodeSelectionPlugin,
     freezeMousePlugin,
     treeProgressPlugin,
     makeLinkClickHandler(onLinkClick),
