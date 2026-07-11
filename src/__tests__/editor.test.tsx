@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import { EditorView } from '@codemirror/view';
 import {
   AtomicCodeMirrorEditor,
   type AtomicCodeMirrorEditorHandle,
@@ -212,5 +213,25 @@ describe('AtomicCodeMirrorEditor', () => {
     );
     expect(highlight).not.toBeNull();
     expect(highlight?.textContent).toContain('glow');
+  });
+
+  it('paints selected fenced code above the block backdrop', () => {
+    const markdown = ['```ts', 'const selected = true;', '```'].join('\n');
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={markdown} />,
+    );
+    const editor = host.querySelector<HTMLElement>('.cm-editor');
+    expect(editor).not.toBeNull();
+    const view = EditorView.findFromDOM(editor!);
+    expect(view).not.toBeNull();
+    const from = markdown.indexOf('selected');
+
+    act(() => {
+      view?.dispatch({ selection: { anchor: from, head: from + 'selected'.length } });
+    });
+
+    const selection = host.querySelector('.cm-atomic-fenced-selection');
+    expect(selection).not.toBeNull();
+    expect(selection?.textContent).toBe('selected');
   });
 });
