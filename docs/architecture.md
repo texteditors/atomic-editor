@@ -70,6 +70,7 @@ src/
   inline-preview.ts      main decoration engine (ViewPlugin)
   image-blocks.ts        block image widgets (StateField)
   table-widget.ts        WYSIWYG tables (StateField)
+  read-only.ts           shared reading-mode facet + CM6 extension
   edit-helpers.ts        bracket / emphasis auto-pairing
   atomic-theme.ts        theme + syntax highlighting
   code-languages.ts      curated fenced-code grammar registry
@@ -89,7 +90,7 @@ cursor / undo state from one document can't bleed into the next.
 
 The component exposes an imperative handle via `editorHandleRef`:
 `focus`, `undo`, `redo`, `openSearch(query?)`, `closeSearch`,
-`isSearchOpen`, `getMarkdown`, `getContentDOM`.
+`isSearchOpen`, `getMarkdown`, `getContentDOM`, `setReadOnly(readOnly)`.
 
 Notable props:
 
@@ -99,9 +100,13 @@ Notable props:
   internal ones (checkbox toggles, tight-list continuations).
 - `initialSearchText` — opens the search panel pre-filled, useful for
   landing users on a search hit.
+- `readOnly` — toggles a compartment-backed reading mode without
+  remounting, preserving scroll and search state while disabling text
+  and table editing.
 - `onLinkClick` — called when the user taps the external-link icon
-  rendered next to a link. Defaults to `window.open`; override for
-  platform-specific shells (Tauri, Capacitor, Electron).
+  while editing, or the rendered link itself in reading mode. Defaults
+  to `window.open`; override for platform-specific shells (Tauri,
+  Capacitor, Electron).
 - `codeLanguages` — grammars for fenced code blocks; defaults to
   `[]`. See the README for usage.
 

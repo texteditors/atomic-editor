@@ -19,6 +19,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
+import { readOnlyFacet } from './read-only';
 
 // Inline preview — the Obsidian "Live Preview" model.
 //
@@ -96,6 +97,17 @@ function linkIconHitTarget(event: MouseEvent, root?: HTMLElement): HTMLElement |
   return onIcon ? linkEl : null;
 }
 
+// Whole-link hit test, used in read-only mode where the entire link
+// (text + icon) is the open affordance. Mirrors `linkIconHitTarget`'s
+// containment check but without the trailing-icon zone restriction.
+function linkElementFromEvent(event: MouseEvent, root?: HTMLElement): HTMLElement | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const linkEl = target.closest<HTMLElement>('.cm-atomic-link');
+  if (!linkEl || (root && !root.contains(linkEl))) return null;
+  return linkEl;
+}
+
 // Tracks mouse state on the editor and drives the freeze flag. We listen
 // on the content DOM for pointerdown and on the window for pointerup —
 // users can release outside the editor after a drag, and we'd miss the
@@ -106,6 +118,9 @@ const freezeMousePlugin = ViewPlugin.fromClass(
     private releaseTimer: number | null = null;
     private readonly onDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      // Read-only never reveals, so there's nothing to freeze. Bail
+      // before any of the selection/icon plumbing runs.
+      if (this.view.state.facet(readOnlyFacet)) return;
       // Only freeze when the pointerdown lands inside the content. The
       // scrollbar (on the outer .cm-scroller) would otherwise engage the
       // freeze too — which keeps decorations stale for the whole drag
@@ -323,8 +338,13 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   const { doc } = state;
   const ranges: Range<Decoration>[] = [];
 
+  // In read-only mode no line is ever "active" — the whole doc stays
+  // rendered (no reveal). We skip the selection walk entirely rather
+  // than relying on `hasFocus` staying false, so a programmatic
+  // `.focus()` can't accidentally reveal source under reading mode.
+  const readOnly = state.facet(readOnlyFacet);
   const activeLines = new Set<number>();
-  if (view.hasFocus) {
+  if (view.hasFocus && !readOnly) {
     for (const r of state.selection.ranges) {
       const firstLine = doc.lineAt(r.from).number;
       const lastLine = doc.lineAt(r.to).number;
@@ -802,12 +822,21 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
       // the whole parsed tree on the remaining triggers means
       // scroll-time cost is zero; the tree walk itself is
       // single-digit ms for typical atoms.
+      // A read-only toggle (compartment reconfigure) changes neither
+      // doc nor selection nor focus, so detect the facet flip directly
+      // — otherwise reading mode wouldn't repaint into / out of the
+      // fully-rendered state.
+      const readOnlyChanged =
+        update.startState.facet(readOnlyFacet) !==
+        update.state.facet(readOnlyFacet);
+
       if (
         justUnfroze ||
         update.docChanged ||
         update.selectionSet ||
         update.focusChanged ||
-        treeGrew
+        treeGrew ||
+        readOnlyChanged
       ) {
         this.decorations = buildInlineDecorations(update.view);
       }
@@ -891,7 +920,13 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
     click: (event, view) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
       if (event.button !== 0) return false;
-      const linkEl = linkIconHitTarget(event, view.contentDOM);
+      // In read-only mode there's no editable link text to protect, so
+      // a click anywhere on the link opens it. In edit mode the open
+      // affordance stays scoped to the trailing icon hit-zone so the
+      // text itself remains clickable-to-edit.
+      const linkEl = view.state.facet(readOnlyFacet)
+        ? linkElementFromEvent(event, view.contentDOM)
+        : linkIconHitTarget(event, view.contentDOM);
       if (!linkEl) return false;
 
       const pos = view.posAtDOM(linkEl);
