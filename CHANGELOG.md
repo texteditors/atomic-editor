@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.5.1]
+
+### Fixed
+
+- Bare GFM URLs and angle-bracket autolinks remain visible on inactive
+  lines and now use the same clickable styling and open behavior as
+  explicit Markdown links.
+- URL-shaped labels such as
+  `[https://label.example](https://destination.example)` keep their
+  visible label while the destination remains hidden until the cursor
+  enters that link; opening the link uses the actual destination.
+- Backslash-escaped URL slashes render cleanly without exposing partial
+  escape syntax.
+
 ## [0.5.0]
 
 ### Added
