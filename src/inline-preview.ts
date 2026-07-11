@@ -350,6 +350,29 @@ function pushReplace(
   }
 }
 
+const LIST_BASE_EM = 0.8;
+const LIST_ALCOVE_EM = 1.2;
+const LIST_LEVEL_EM = 0.6;
+
+function nearestListItem(node: SyntaxNode | null): SyntaxNode | null {
+  for (let current = node; current; current = current.parent) {
+    if (current.name === 'ListItem') return current;
+  }
+  return null;
+}
+
+function listItemDepth(item: SyntaxNode): number {
+  let depth = 0;
+  for (let parent = item.parent; parent; parent = parent.parent) {
+    if (parent.name === 'ListItem') depth++;
+  }
+  return depth;
+}
+
+function sameListItem(a: SyntaxNode | null, b: SyntaxNode): boolean {
+  return a?.name === 'ListItem' && a.from === b.from && a.to === b.to;
+}
+
 function buildInlineDecorations(view: EditorView): DecorationSet {
   const { state } = view;
   const { doc } = state;
@@ -538,34 +561,65 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
         const taskFrom =
           taskLead != null ? line.from + taskLead[1].length : undefined;
 
-        // Hanging-indent every list item. Layout:
+        // Hanging-indent every physical line owned by this list item.
+        // Ownership and depth come from the parsed tree, not raw source
+        // indentation: CommonMark allows up to three leading spaces on a
+        // top-level item, and ordered-list children commonly use a
+        // marker-width indent rather than two spaces.
+        //
+        // Layout:
         //
         //   <--BASE--><--ALCOVE--> first-line text
         //             •            wrapped lines land at the
         //                          same column as the first-line
         //                          text, not back under the marker
         //
-        // ALCOVE_EM is a fixed 1.2em regardless of list kind.
+        // LIST_ALCOVE_EM is fixed regardless of list kind.
         // Every marker (bullet widget, checkbox widget, ordered
         // number via mark decoration) is forced into an
         // inline-block of exactly that width via CSS — so the
         // alignment math doesn't depend on per-font marker
         // widths. `padding-left` sets the content column;
         // negative `text-indent` of the same magnitude pulls the
-        // first line back so the marker lands in the alcove.
-        const rawIndent = node.from - line.from;
-        const depth = Math.max(0, Math.floor(rawIndent / 2));
-        const BASE_EM = 0.8;
-        const ALCOVE_EM = 1.2;
-        const LEVEL_EM = 0.6;
-        const padding = BASE_EM + ALCOVE_EM + depth * LEVEL_EM;
-        ranges.push(
-          Decoration.line({
-            attributes: {
-              style: `padding-left: ${padding}em; text-indent: -${ALCOVE_EM}em`,
-            },
-          }).range(line.from),
-        );
+        // first line back so the marker lands in the alcove. Structural
+        // leading spaces are replaced visually on every owned line;
+        // otherwise they would be added on top of the tree-derived
+        // padding and ordered/odd indentation would still drift.
+        const listItem = nearestListItem(node.node);
+        if (listItem) {
+          const depth = listItemDepth(listItem);
+          const padding =
+            LIST_BASE_EM + LIST_ALCOVE_EM + depth * LIST_LEVEL_EM;
+          const firstLine = doc.lineAt(listItem.from);
+          const lastLine = doc.lineAt(listItem.to);
+
+          for (
+            let number = firstLine.number;
+            number <= lastLine.number;
+            number++
+          ) {
+            const ownedLine = doc.line(number);
+            const contentOffset = ownedLine.text.search(/\S/);
+            if (contentOffset < 0) continue;
+            const contentFrom = ownedLine.from + contentOffset;
+            const owner = nearestListItem(tree.resolve(contentFrom, 1));
+            if (!sameListItem(owner, listItem)) continue;
+
+            const markerLine = ownedLine.number === line.number;
+            ranges.push(
+              Decoration.line({
+                attributes: {
+                  style: `padding-left: ${padding}em; text-indent: ${
+                    markerLine ? `-${LIST_ALCOVE_EM}` : '0'
+                  }em`,
+                },
+              }).range(ownedLine.from),
+            );
+            if (contentFrom > ownedLine.from) {
+              pushReplace(ranges, doc, ownedLine.from, contentFrom);
+            }
+          }
+        }
 
         // Figure out how far past node.to the mark's trailing
         // space lives. For tasks, CM6 pre-computed taskFrom as

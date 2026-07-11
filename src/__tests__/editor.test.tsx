@@ -55,6 +55,58 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(content?.textContent).toContain('em');
   });
 
+  it('applies the owning list item indent to physical continuation lines', () => {
+    const markdown = [
+      '- [ ] Move `a/b.ts` to `a/c/b.ts` (no',
+      'type changes).',
+      '  - [ ] Extract the cli socket (hello/msg/ack',
+      '    frames).',
+    ].join('\n');
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={markdown} />,
+    );
+    const lines = Array.from(host.querySelectorAll<HTMLElement>('.cm-line'));
+    const lineWith = (text: string) =>
+      lines.find((line) => line.textContent?.includes(text));
+
+    expect(lineWith('Move')?.style.paddingLeft).toBe('2em');
+    expect(lineWith('type changes')?.style.paddingLeft).toBe('2em');
+    expect(lineWith('type changes')?.style.textIndent).toBe('0em');
+    expect(lineWith('Extract')?.style.paddingLeft).toBe('2.6em');
+    expect(lineWith('frames')?.style.paddingLeft).toBe('2.6em');
+    expect(lineWith('frames')?.style.textIndent).toBe('0em');
+  });
+
+  it('derives list depth from syntax ancestry and hides structural indentation', () => {
+    const markdown = [
+      '   - top-level with three leading spaces',
+      '     continuation',
+      '     1. ordered child',
+      '        ordered continuation',
+    ].join('\n');
+    const handleRef = createRef<AtomicCodeMirrorEditorHandle | null>() as {
+      current: AtomicCodeMirrorEditorHandle | null;
+    };
+    const { host } = mount(
+      <AtomicCodeMirrorEditor
+        markdownSource={markdown}
+        editorHandleRef={handleRef}
+      />,
+    );
+    const lines = Array.from(host.querySelectorAll<HTMLElement>('.cm-line'));
+    const lineWith = (text: string) =>
+      lines.find((line) => line.textContent?.includes(text));
+
+    expect(lineWith('top-level')?.style.paddingLeft).toBe('2em');
+    expect(lineWith('continuation')?.textContent).not.toMatch(/^\s/);
+    expect(lineWith('top-level')?.textContent).not.toMatch(/^\s/);
+    expect(lineWith('ordered child')?.style.paddingLeft).toBe('2.6em');
+    expect(lineWith('ordered continuation')?.style.paddingLeft).toBe('2.6em');
+    expect(lineWith('ordered child')?.textContent).not.toMatch(/^\s/);
+    expect(lineWith('ordered continuation')?.textContent).not.toMatch(/^\s/);
+    expect(handleRef.current?.getMarkdown()).toBe(markdown);
+  });
+
   it('keeps bare URLs visible on inactive lines', () => {
     const { host } = mount(
       <AtomicCodeMirrorEditor markdownSource={'- https://example.com'} />,
