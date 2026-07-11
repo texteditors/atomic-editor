@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.6.1]
+
+### Added
+
+- Expanded the regression harness with a deterministic browser fixture,
+  shared Markdown rendering contracts, Chromium/Firefox/WebKit coverage, a
+  packed-package consumer build, dependency auditing, and automated dependency
+  updates.
+
+### Fixed
+
+- Dragged text selections inside fenced code blocks now remain visible above
+  the opaque code backdrop. Selection paint updates live during multi-line
+  drags without changing code-block layout or source content.
+
 ## [0.6.0]
 
 ### Added
