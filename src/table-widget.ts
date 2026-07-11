@@ -17,6 +17,7 @@ import {
   type DecorationSet,
 } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
+import { matchHighlight } from './highlight';
 import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
 
 // GFM tables as a WYSIWYG block widget.
@@ -173,9 +174,9 @@ function getCellSource(cell: HTMLElement): HTMLElement | null {
 // construction), no images (handled by the separate cell-preview strip).
 //
 // The parser is recursive so `**[text](url)**` nests cleanly, but each
-// mark is a straightforward delimiter pair — no CommonMark flanking
-// rules. The UX inside a cell is forgiving on purpose: if a pair
-// matches, it decorates.
+// mark is a straightforward delimiter pair. Highlights share their
+// delimiter/flanking rules with the main markdown parser so the same
+// source renders consistently inside and outside tables.
 
 type CellToken =
   | { type: 'text'; text: string }
@@ -254,12 +255,18 @@ function matchCellMarkAt(
     };
   }
 
-  // Highlight.
-  m = rest.match(/^==([\s\S]+?)==/);
-  if (m) {
+  // Highlight. Keep exact-delimiter and whitespace rules aligned with
+  // the main Lezer extension.
+  const highlight = matchHighlight(raw, from);
+  if (highlight) {
     return {
-      token: { type: 'highlight', children: parseCellInline(m[1]) },
-      end: from + m[0].length,
+      token: {
+        type: 'highlight',
+        children: parseCellInline(
+          raw.slice(highlight.contentFrom, highlight.contentTo),
+        ),
+      },
+      end: highlight.end,
     };
   }
 

@@ -1,7 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { createRef } from 'react';
+import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react-dom/test-utils';
 import {
   AtomicCodeMirrorEditor,
   type AtomicCodeMirrorEditorHandle,
@@ -64,6 +63,14 @@ describe('AtomicCodeMirrorEditor', () => {
     const highlight = host.querySelector('.cm-atomic-highlight');
     expect(highlight).not.toBeNull();
     expect(highlight?.textContent).toContain('highlighted text');
+  });
+
+  it('does not partially highlight a triple-equals span', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'This is ===not highlighted===.'} />,
+    );
+
+    expect(host.querySelector('.cm-atomic-highlight')).toBeNull();
   });
 
   it('renders highlight syntax inside table cells', () => {

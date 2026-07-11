@@ -19,7 +19,7 @@ base — extracted to stand on its own, and hardened on real user documents.
 
 ## Features
 
-- **Live preview.** Headings, emphasis, links, images,
+- **Live preview.** Headings, emphasis, `==highlights==`, links, images,
   and tables render inline; the raw syntax appears only on the line your
   cursor is on, then tucks itself away when you move on.
 - **Raw markdown is the source of truth.** Every decoration is view-only, so
@@ -47,7 +47,7 @@ npm install @atomic-editor/editor \
   @codemirror/state @codemirror/view @codemirror/commands \
   @codemirror/autocomplete @codemirror/language @codemirror/search \
   @codemirror/lang-markdown \
-  @lezer/common @lezer/highlight \
+  @lezer/common @lezer/highlight @lezer/markdown \
   react react-dom
 ```
 
