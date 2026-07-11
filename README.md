@@ -378,17 +378,15 @@ npm install
 npm run dev        # demo dev server at http://localhost:5173
 npm test           # vitest unit tests
 npm run build      # tsc emit to dist/
-npm run test:e2e   # Playwright probe suite against the demo
+npm run test:e2e   # legacy probes + deterministic browser suites
+npm run test:package  # pack and build a clean consumer app
 ```
 
-The Playwright suite (`scripts/test-editor.mjs`) is the primary
-regression-catching tool — around 50 probes covering CLS during idle /
-scroll / typing, click-freeze timing, every block-type decoration
-(headings, lists, tasks, tables, images, fences, HRs, wiki links),
-cursor-scoped link reveal, copy-as-raw-markdown, tight-list
-continuation, escape handling, and late-doc rendering via the
-parser-progress mechanic. Run after any change to the editor's
-extensions.
+The browser harness combines the broad legacy probe suite with focused,
+isolated Playwright Test specs. Chromium runs the full matrix; Firefox and
+WebKit run the compatibility smoke tests. See
+[docs/testing.md](./docs/testing.md) for the layers, commands, and the rule for
+turning a bug fix into a lasting regression test.
 
 Because the editor ships inside [Atomic](https://github.com/kenforthewin/atomic),
 real user documents are its de-facto fuzz corpus — odd inputs (multi-line
