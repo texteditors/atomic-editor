@@ -14,14 +14,13 @@
  *   HARNESS_URL=http://foo:5173 node scripts/test-editor.mjs
  */
 
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { chromium } from 'playwright';
+import { createServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,23 +54,37 @@ async function ensureServer() {
   if (skipDev) {
     throw new Error(`dev server not reachable at ${base} and --skip-dev was set`);
   }
+
+  const target = new URL(base);
+  if (target.protocol !== 'http:') {
+    throw new Error(
+      `cannot auto-start a dev server for ${base}; use an http URL or --skip-dev`,
+    );
+  }
+
   log('info', 'starting vite dev server…');
-  const proc = spawn('npm', ['run', 'dev'], {
-    cwd: repoRoot,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-  });
-  proc.stdout.on('data', () => {});
-  proc.stderr.on('data', () => {});
   const start = Date.now();
+  // Own the Vite server directly instead of spawning `npm run dev`.
+  // Killing the npm wrapper left its Vite/esbuild descendants alive on
+  // GitHub Actions, so the probes finished in ~1 minute but the job did
+  // not exit until Actions cancelled it at the six-hour limit.
+  const server = await createServer({
+    server: {
+      host: target.hostname,
+      port: Number(target.port || 80),
+      strictPort: true,
+    },
+  });
+  await server.listen();
+
   while (Date.now() - start < 60_000) {
     if (await isServerUp(base)) {
       log('info', `dev server ready (${Math.round((Date.now() - start) / 100) / 10}s)`);
-      return proc;
+      return server;
     }
     await sleep(400);
   }
-  proc.kill('SIGTERM');
+  await server.close();
   throw new Error(`dev server did not respond on ${base} within 60s`);
 }
 
@@ -2325,20 +2338,25 @@ function hasLineWithText(s) {
 // ---------- driver ----------
 
 async function run() {
-  const devProc = await ensureServer();
-  const browser = await chromium.launch({ headless: !headed });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  context.on('weberror', (err) => log('warn', `page weberror: ${err.error().message}`));
-  const page = await context.newPage();
-  page.on('pageerror', (err) => {
-    pageErrors.push(err.message);
-    log('warn', `pageerror: ${err.message}`);
-  });
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') log('warn', `console.error: ${msg.text()}`);
-  });
+  const devServer = await ensureServer();
+  let browser = null;
 
   try {
+    // Keep browser startup inside the cleanup boundary too. If
+    // Chromium is missing or context creation fails, the Vite server
+    // still closes rather than becoming another lingering handle.
+    browser = await chromium.launch({ headless: !headed });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    context.on('weberror', (err) => log('warn', `page weberror: ${err.error().message}`));
+    const page = await context.newPage();
+    page.on('pageerror', (err) => {
+      pageErrors.push(err.message);
+      log('warn', `pageerror: ${err.message}`);
+    });
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') log('warn', `console.error: ${msg.text()}`);
+    });
+
     log('info', `navigating to ${base}/`);
     await page.goto(`${base}/`, { waitUntil: 'networkidle' });
     await page.waitForSelector('.cm-editor');
@@ -2384,11 +2402,8 @@ async function run() {
     log('info', `screenshots: ${SCREENSHOT_DIR}`);
     process.exitCode = failCount > 0 ? 1 : 0;
   } finally {
-    await browser.close();
-    if (devProc && !devProc.killed) {
-      devProc.kill('SIGTERM');
-      await Promise.race([once(devProc, 'exit'), sleep(2000)]);
-    }
+    await browser?.close();
+    await devServer?.close();
   }
 }
 
