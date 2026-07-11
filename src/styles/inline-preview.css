@@ -325,8 +325,8 @@
 /* Shared marker alcove — forces bullet, task checkbox, and
  * ordered-list number into the same fixed horizontal width so the
  * inline-preview line padding / text-indent math is stable across
- * list kinds. Width here must match ALCOVE_EM in inline-preview.ts
- * (`ListMark` branch). Without the fixed width, wrapped-line
+ * list kinds. Width here must match LIST_ALCOVE_EM in
+ * inline-preview.ts. Without the fixed width, wrapped-line
  * indent lands in different places for each kind because the raw
  * marker widths differ per font. */
 .cm-atomic-list-marker {

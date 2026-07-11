@@ -606,6 +606,85 @@ async function probeNestedListExit(page) {
   );
 }
 
+async function probeListItemLayout(page) {
+  await resetToCanonical(page);
+  const content = page.locator('.cm-content').first();
+  await content.click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+
+  const id = `LAYOUT_${Date.now().toString(36).slice(-4)}`;
+  const source = [
+    `- [ ] ${id}_ROOT no`,
+    `${id}_ROOT_CONT`,
+    `  - [ ] ${id}_NEST no`,
+    `    ${id}_NEST_CONT`,
+    '',
+    `${id}_SEPARATOR`,
+    '',
+    `   - ${id}_ODD`,
+    `     ${id}_ODD_CONT`,
+    `     1. ${id}_ORDERED`,
+    `        ${id}_ORDERED_CONT`,
+  ].join('\n');
+  await page.keyboard.insertText(source);
+  await page.waitForTimeout(300);
+
+  const positions = await page.evaluate((prefix) => {
+    const leftFor = (suffix) => {
+      const marker = `${prefix}_${suffix}`;
+      const line = Array.from(document.querySelectorAll('.cm-line')).find(
+        (candidate) => (candidate.textContent || '').includes(marker),
+      );
+      if (!line) return null;
+      const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const index = (node.nodeValue || '').indexOf(marker);
+        if (index < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        return range.getBoundingClientRect().left;
+      }
+      return null;
+    };
+    return {
+      root: leftFor('ROOT'),
+      rootContinuation: leftFor('ROOT_CONT'),
+      nested: leftFor('NEST'),
+      nestedContinuation: leftFor('NEST_CONT'),
+      odd: leftFor('ODD'),
+      oddContinuation: leftFor('ODD_CONT'),
+      ordered: leftFor('ORDERED'),
+      orderedContinuation: leftFor('ORDERED_CONT'),
+    };
+  }, id);
+
+  const aligned = (a, b) =>
+    typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1;
+  const allFound = Object.values(positions).every((value) => typeof value === 'number');
+  const structureCorrect =
+    allFound &&
+    aligned(positions.root, positions.rootContinuation) &&
+    aligned(positions.nested, positions.nestedContinuation) &&
+    aligned(positions.odd, positions.oddContinuation) &&
+    aligned(positions.ordered, positions.orderedContinuation) &&
+    aligned(positions.root, positions.odd) &&
+    positions.nested > positions.root &&
+    positions.ordered > positions.odd;
+  record(
+    'list layout: continuations follow syntax depth',
+    structureCorrect ? 'pass' : 'fail',
+    `root=${positions.root}/${positions.rootContinuation} nested=${positions.nested}/${positions.nestedContinuation} odd=${positions.odd}/${positions.oddContinuation} ordered=${positions.ordered}/${positions.orderedContinuation}`,
+  );
+  await page.screenshot({
+    path: path.join(SCREENSHOT_DIR, '22-list-continuation-indent.png'),
+    fullPage: false,
+  });
+  await resetToCanonical(page);
+}
+
 async function probeCloseBrackets(page) {
   // Type an opening bracket — the editor should auto-insert the
   // closer and leave the caret between them. Typing content then
@@ -2405,6 +2484,7 @@ async function run() {
     await probeFenceVisibility(page);
     await probeNewBulletList(page);
     await probeNestedListExit(page);
+    await probeListItemLayout(page);
     await probeCloseBrackets(page);
     await probeHeadingClickTargets(page);
     await probeWidgetMarginDrift(page);

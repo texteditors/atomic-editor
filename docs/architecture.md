@@ -188,6 +188,13 @@ the target.
   line (see `image-blocks.ts`), and full WYSIWYG tables (see
   `table-widget.ts`).
 
+- **List layout** follows parsed `ListItem` ancestry. Every physical
+  source line owned by an item gets the same hanging-indent content
+  column, including lazy/hard-wrapped continuations. Structural leading
+  spaces are hidden visually but remain unchanged in the document, so
+  ordered-marker-width and odd-but-valid CommonMark indentation do not
+  distort the rendered nesting depth.
+
 ## `image-blocks.ts` — block image widgets
 
 Images can't be emitted from a `ViewPlugin` because CM6 requires block
