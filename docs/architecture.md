@@ -296,6 +296,9 @@ markdown-specific symmetric delimiters. `extendEmphasisPair` in
 `edit-helpers.ts` adds one special case: typing `*` inside an empty
 `*|*` (or `_|_`) promotes the pair to `**|**` — the Obsidian ergonomic
 for typing bold quickly without thinking about doubled keystrokes.
+`startAsteriskList` resolves the other interpretation: typing a space
+inside an auto-paired star at a valid line prefix consumes the closer,
+turning `*|*` into the unordered-list marker `* |` before text is entered.
 
 ## `atomic-theme.ts`
 

@@ -42,7 +42,11 @@ import {
 } from '@codemirror/search';
 
 import { atomicEditorTheme, atomicMarkdownSyntax } from './atomic-theme';
-import { autoCloseCodeFence, extendEmphasisPair } from './edit-helpers';
+import {
+  autoCloseCodeFence,
+  extendEmphasisPair,
+  startAsteriskList,
+} from './edit-helpers';
 import { imageBlocks } from './image-blocks';
 import { highlightMarkdown } from './highlight';
 import { inlinePreview } from './inline-preview';
@@ -308,6 +312,7 @@ export function AtomicCodeMirrorEditor({
           highlightActiveLine(),
           // Obsidian-style bracket pairing.
           closeBrackets(),
+          startAsteriskList,
           extendEmphasisPair,
           autoCloseCodeFence,
           EditorView.lineWrapping,

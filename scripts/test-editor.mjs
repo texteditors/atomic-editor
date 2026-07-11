@@ -741,6 +741,28 @@ async function probeCloseBrackets(page) {
     boldOk ? 'pass' : 'fail',
     `line=${JSON.stringify(boldLine?.slice(0, 60))}`,
   );
+
+  // A star is ambiguous until the next keystroke: keep its emphasis
+  // auto-pair, but typing a space at a line prefix commits to an
+  // unordered-list marker and must consume the generated closer.
+  const listMarker = `li${Date.now().toString(36).slice(-4)}`;
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('* ');
+  await page.keyboard.type(listMarker);
+  await page.waitForTimeout(120);
+  const listLine = await page.evaluate((marker) => {
+    const lines = Array.from(document.querySelectorAll('.cm-line'));
+    const hit = lines.find((el) => (el.textContent || '').includes(marker));
+    return hit ? (hit.textContent || '') : null;
+  }, listMarker);
+  const listOk =
+    listLine?.includes(listMarker) === true && !listLine.endsWith('*');
+  record(
+    'closeBrackets: `* ` starts a list without a trailing star',
+    listOk ? 'pass' : 'fail',
+    `line=${JSON.stringify(listLine?.slice(0, 60))}`,
+  );
 }
 
 async function scrollToInlineMarksTable(page) {
