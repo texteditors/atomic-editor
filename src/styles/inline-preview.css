@@ -352,6 +352,7 @@
   width: 1.05em;
   height: 1.05em;
   margin: 0 0.31em 0 -0.16em;
+  font-size: inherit;
   vertical-align: 0.1em;
   appearance: none;
   -webkit-appearance: none;
@@ -388,6 +389,16 @@
 .cm-atomic-task-checkbox:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--atomic-editor-accent, #7c3aed) 28%, transparent 72%);
+}
+
+/* Forced-colors mode removes box shadows, so retain a visible keyboard
+ * focus indicator using system colors instead. */
+@media (forced-colors: active) {
+  .cm-atomic-task-checkbox:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
 }
 
 /* Whole-line strike for completed task items. */
