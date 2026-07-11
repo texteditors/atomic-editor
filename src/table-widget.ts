@@ -17,6 +17,7 @@ import {
   type DecorationSet,
 } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
+import { matchHighlight } from './highlight';
 import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
 import { readOnlyFacet } from './read-only';
 
@@ -169,20 +170,21 @@ function getCellSource(cell: HTMLElement): HTMLElement | null {
 // ---- inline-mark parsing for cell source --------------------------------
 
 // Cells render a subset of inline markdown — bold, italic, strikethrough,
-// and links. No code spans (the `|` inside a backtick would silently
+// highlight, and links. No code spans (the `|` inside a backtick would silently
 // break row parsing), no lists/blocks (cells are single-line by
 // construction), no images (handled by the separate cell-preview strip).
 //
 // The parser is recursive so `**[text](url)**` nests cleanly, but each
-// mark is a straightforward delimiter pair — no CommonMark flanking
-// rules. The UX inside a cell is forgiving on purpose: if a pair
-// matches, it decorates.
+// mark is a straightforward delimiter pair. Highlights share their
+// delimiter/flanking rules with the main markdown parser so the same
+// source renders consistently inside and outside tables.
 
 type CellToken =
   | { type: 'text'; text: string }
   | { type: 'strong'; delim: '**' | '__'; children: CellToken[] }
   | { type: 'em'; delim: '*' | '_'; children: CellToken[] }
   | { type: 'strike'; children: CellToken[] }
+  | { type: 'highlight'; children: CellToken[] }
   | { type: 'link'; textChildren: CellToken[]; url: string };
 
 export function parseCellInline(raw: string): CellToken[] {
@@ -251,6 +253,21 @@ function matchCellMarkAt(
     return {
       token: { type: 'strike', children: parseCellInline(m[1]) },
       end: from + m[0].length,
+    };
+  }
+
+  // Highlight. Keep exact-delimiter and whitespace rules aligned with
+  // the main Lezer extension.
+  const highlight = matchHighlight(raw, from);
+  if (highlight) {
+    return {
+      token: {
+        type: 'highlight',
+        children: parseCellInline(
+          raw.slice(highlight.contentFrom, highlight.contentTo),
+        ),
+      },
+      end: highlight.end,
     };
   }
 
@@ -352,9 +369,23 @@ function renderCellToken(tok: CellToken): Node {
     return wrap;
   }
 
+  if (tok.type === 'highlight') {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-atomic-highlight-wrap';
+    wrap.appendChild(makeCellMark('=='));
+    const inner = document.createElement('span');
+    inner.className = 'cm-atomic-highlight';
+    inner.appendChild(renderTokensTo(tok.children));
+    wrap.appendChild(inner);
+    wrap.appendChild(makeCellMark('=='));
+    return wrap;
+  }
+
   // Link. Shape mirrors the outer-editor markup: `.cm-atomic-link` on
   // the visible text (picks up link color + external-link icon via
-  // `::after`), faint marks for `[`, `]`, `(`, URL, `)`. `data-url`
+  // `::after`), faint marks for `[`, `]`, `(`, URL, `)`, and highlight
+  // uses the same decorated wrapper pattern as the main editor.
+  // `data-url`
   // lets the cell-source click handler open the right URL without
   // re-parsing.
   const wrap = document.createElement('span');

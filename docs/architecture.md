@@ -68,6 +68,7 @@ src/
   index.ts               public API (AtomicCodeMirrorEditor + types)
   AtomicCodeMirrorEditor.tsx   React shell + imperative handle
   inline-preview.ts      main decoration engine (ViewPlugin)
+  highlight.ts           `==highlight==` markdown parser extension
   image-blocks.ts        block image widgets (StateField)
   table-widget.ts        WYSIWYG tables (StateField)
   read-only.ts           shared reading-mode facet + CM6 extension

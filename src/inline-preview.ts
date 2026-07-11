@@ -210,6 +210,7 @@ const HIDEABLE_SYNTAX = new Set([
   'LinkMark',
   'LinkTitle',
   'StrikethroughMark',
+  'HighlightMark',
   'QuoteMark',
 ]);
 
@@ -224,6 +225,7 @@ const INLINE_MARK_CLASS: Record<string, string> = {
   Emphasis: 'cm-atomic-em',
   InlineCode: 'cm-atomic-inline-code',
   Strikethrough: 'cm-atomic-strike',
+  Highlight: 'cm-atomic-highlight',
   Link: 'cm-atomic-link',
 };
 
@@ -715,6 +717,7 @@ const MID_TYPING_DELIMITERS: readonly {
   { delim: '**', contentCls: 'cm-atomic-strong', delimCls: 'cm-atomic-strong-mark' },
   { delim: '__', contentCls: 'cm-atomic-strong', delimCls: 'cm-atomic-strong-mark' },
   { delim: '~~', contentCls: 'cm-atomic-strike', delimCls: 'cm-atomic-strike-mark' },
+  { delim: '==', contentCls: 'cm-atomic-highlight', delimCls: 'cm-atomic-highlight-mark' },
   { delim: '*', contentCls: 'cm-atomic-em', delimCls: 'cm-atomic-em-mark' },
   { delim: '_', contentCls: 'cm-atomic-em', delimCls: 'cm-atomic-em-mark' },
 ];

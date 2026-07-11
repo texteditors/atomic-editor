@@ -848,10 +848,10 @@ async function probeTableLinkIcon(page) {
     const w = Array.from(document.querySelectorAll('.cm-atomic-table')).find(
       (w) => (w.textContent || '').includes('struck text'),
     );
-    // Row 0, col 4 is `[example](https://example.org)`.
+    // Row 0, col 5 is `[example](https://example.org)`.
     const icon = w
       .querySelectorAll('tbody tr')[0]
-      .querySelectorAll('td')[4]
+      .querySelectorAll('td')[5]
       .querySelector('.cm-atomic-link-icon');
     if (!icon) return null;
     icon.scrollIntoView({ block: 'center' });
@@ -1094,8 +1094,8 @@ async function probeTableWidget(page) {
 
 async function probeTableCellMarkdown(page) {
   // The showcase includes a deterministic inline-marks table with
-  // columns: Plain | Bold | Italic | Strike | Link.
-  // Body row: plain text | **bold text** | *italic text* | ~~struck text~~ | [example](https://example.org)
+  // columns: Plain | Bold | Italic | Strike | Highlight | Link.
+  // Body row includes one canonical example of each supported mark.
   //
   // Each mark should decorate into its matching `.cm-atomic-*` span
   // inside the cell's source element. On focus, the cell should swap
@@ -1126,12 +1126,13 @@ async function probeTableCellMarkdown(page) {
     const bodyRow = wrap.querySelector('tbody tr');
     if (!bodyRow) return { found: false };
     const cells = Array.from(bodyRow.querySelectorAll('td'));
-    // Expect 5 cells (Plain, Bold, Italic, Strike, Link).
+    // Expect 6 cells (Plain, Bold, Italic, Strike, Highlight, Link).
     const get = (cell, sel) => (cell ? cell.querySelector(sel) !== null : false);
     const boldCell = cells[1];
     const italicCell = cells[2];
     const strikeCell = cells[3];
-    const linkCell = cells[4];
+    const highlightCell = cells[4];
+    const linkCell = cells[5];
     return {
       found: true,
       hasBold: get(boldCell, '.cm-atomic-strong'),
@@ -1140,6 +1141,9 @@ async function probeTableCellMarkdown(page) {
       italicText: italicCell?.querySelector('.cm-atomic-em')?.textContent || '',
       hasStrike: get(strikeCell, '.cm-atomic-strike'),
       strikeText: strikeCell?.querySelector('.cm-atomic-strike')?.textContent || '',
+      hasHighlight: get(highlightCell, '.cm-atomic-highlight'),
+      highlightText:
+        highlightCell?.querySelector('.cm-atomic-highlight')?.textContent || '',
       hasLink: get(linkCell, '.cm-atomic-link'),
       linkText: linkCell?.querySelector('.cm-atomic-link')?.textContent || '',
       linkUrl: linkCell?.querySelector('.cm-atomic-link-wrap')?.dataset.url || '',
@@ -1165,6 +1169,11 @@ async function probeTableCellMarkdown(page) {
     'cell markdown: strike decorates',
     shape.hasStrike && shape.strikeText === 'struck text' ? 'pass' : 'fail',
     `hasStrike=${shape.hasStrike} text=${JSON.stringify(shape.strikeText)}`,
+  );
+  record(
+    'cell markdown: highlight decorates',
+    shape.hasHighlight && shape.highlightText === 'marked text' ? 'pass' : 'fail',
+    `hasHighlight=${shape.hasHighlight} text=${JSON.stringify(shape.highlightText)}`,
   );
   record(
     'cell markdown: link decorates',

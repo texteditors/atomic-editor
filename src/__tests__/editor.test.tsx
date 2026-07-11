@@ -125,4 +125,40 @@ describe('AtomicCodeMirrorEditor', () => {
 
     expect(onLinkClick).toHaveBeenCalledWith(expectedUrl);
   });
+
+  it('renders highlight syntax with the expected preview class', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'This has ==highlighted text== in it.'} />,
+    );
+
+    const highlight = host.querySelector('.cm-atomic-highlight');
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toContain('highlighted text');
+  });
+
+  it('does not partially highlight a triple-equals span', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'This is ===not highlighted===.'} />,
+    );
+
+    expect(host.querySelector('.cm-atomic-highlight')).toBeNull();
+  });
+
+  it('renders highlight syntax inside table cells', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor
+        markdownSource={[
+          '| Plain | Highlight |',
+          '| --- | --- |',
+          '| text | ==glow== |',
+        ].join('\n')}
+      />,
+    );
+
+    const highlight = host.querySelector(
+      '.cm-atomic-table-cell-source .cm-atomic-highlight',
+    );
+    expect(highlight).not.toBeNull();
+    expect(highlight?.textContent).toContain('glow');
+  });
 });

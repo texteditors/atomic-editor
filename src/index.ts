@@ -11,6 +11,7 @@ export type {
 // recommended entry point.
 export { inlinePreview } from './inline-preview';
 export type { InlinePreviewConfig } from './inline-preview';
+export { highlightMarkdown } from './highlight';
 export { imageBlocks } from './image-blocks';
 export { tables } from './table-widget';
 export type { TablesConfig } from './table-widget';
