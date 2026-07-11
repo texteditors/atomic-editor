@@ -343,20 +343,51 @@
 }
 
 /* GFM task-list checkbox widget — replaces `[ ]` / `[x]` in a task
- * item. Width matches the list-marker wrapper (0.9em); `margin-right:
- * 0.3em` adds the breathing room between the checkbox and the item
- * text. Total footprint = 1.2em, which is what ALCOVE_EM expects in
- * inline-preview.ts (bullets and checkboxes share the same alcove so
- * first-line content aligns with wrapped-line content consistently).
- * The trailing space after `[ ]` in the source is swallowed by the
- * replace decoration. */
+ * item. Styled as a small custom square rather than the platform's
+ * native checkbox so it reads closer to Obsidian across browsers.
+ * Width+margin still total 1.2em to match ALCOVE_EM in
+ * inline-preview.ts. The trailing space after `[ ]` in the source is
+ * swallowed by the replace decoration. */
 .cm-atomic-task-checkbox {
-  width: 0.9em;
-  height: 0.9em;
-  margin: 0 0.3em 0 0;
-  vertical-align: -0.15em;
-  accent-color: var(--atomic-editor-accent, #7c3aed);
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.31em 0 -0.16em;
+  vertical-align: 0.1em;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--atomic-editor-fg-muted, #888);
+  border-radius: 0.22em;
+  background: transparent;
   cursor: pointer;
+  position: relative;
+  display: inline-grid;
+  place-content: center;
+  transform: translateY(-0.04em);
+}
+
+.cm-atomic-task-checkbox::after {
+  content: "";
+  width: 0.26em;
+  height: 0.5em;
+  border-right: 0.12em solid #ffffff;
+  border-bottom: 0.12em solid #ffffff;
+  transform: rotate(45deg) translate(-0.03em, -0.04em);
+  opacity: 0;
+}
+
+.cm-atomic-task-checkbox:checked {
+  background: var(--atomic-editor-accent, #7c3aed);
+  border-color: var(--atomic-editor-accent, #7c3aed);
+}
+
+.cm-atomic-task-checkbox:checked::after {
+  opacity: 1;
+}
+
+.cm-atomic-task-checkbox:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--atomic-editor-accent, #7c3aed) 28%, transparent 72%);
 }
 
 /* Whole-line strike for completed task items. */
