@@ -208,7 +208,6 @@ const HIDEABLE_SYNTAX = new Set([
   'CodeMark',
   'CodeInfo',
   'LinkMark',
-  'URL',
   'LinkTitle',
   'StrikethroughMark',
   'QuoteMark',
@@ -227,6 +226,22 @@ const INLINE_MARK_CLASS: Record<string, string> = {
   Strikethrough: 'cm-atomic-strike',
   Link: 'cm-atomic-link',
 };
+
+// A Link can contain two URL nodes when its visible label is itself a
+// URL: `[https://label](https://destination)`. Only the node after the
+// closing `]` is the destination syntax that should collapse. Treating
+// every URL under Link as a destination makes the visible label vanish.
+function linkDestinationUrl(link: SyntaxNode, doc: Text): SyntaxNode | null {
+  const labelClose = link
+    .getChildren('LinkMark')
+    .find((mark) => doc.sliceString(mark.from, mark.to) === ']');
+  if (!labelClose) return null;
+  return (
+    link
+      .getChildren('URL')
+      .find((url) => url.from >= labelClose.to) ?? null
+  );
+}
 
 class BulletWidget extends WidgetType {
   eq(): boolean {
@@ -466,6 +481,33 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
             }
           }
           pushReplace(ranges, doc, node.from, hideTo);
+        }
+      }
+
+      if (node.name === 'URL' && node.from < node.to) {
+        const parent = node.node.parent;
+        if (parent?.name === 'Link') {
+          // A URL in the label is visible content. A URL after the
+          // closing `]` is destination syntax and follows the existing
+          // cursor-inside-this-link reveal rule—not whole-line activity.
+          const destination = linkDestinationUrl(parent, doc);
+          if (
+            destination?.from === node.from &&
+            !activeLinkStarts.has(parent.from)
+          ) {
+            pushReplace(ranges, doc, node.from, node.to);
+          }
+        } else {
+          // Bare GFM URLs and `<https://...>` autolinks are visible
+          // content, not syntax. Give them the same styling and icon
+          // hit target as explicit links while leaving their text in
+          // the document flow on inactive lines.
+          ranges.push(
+            Decoration.mark({ class: 'cm-atomic-link' }).range(
+              node.from,
+              node.to,
+            ),
+          );
         }
       }
 
@@ -934,9 +976,14 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
 
       const tree = syntaxTree(view.state);
       let node: SyntaxNode | null = tree.resolveInner(pos, 1);
-      while (node && node.name !== 'Link') node = node.parent;
-      if (!node) return false;
-      const urlNode = node.getChild('URL');
+      let visibleUrl: SyntaxNode | null = null;
+      while (node && node.name !== 'Link') {
+        if (node.name === 'URL') visibleUrl = node;
+        node = node.parent;
+      }
+      const urlNode = node
+        ? linkDestinationUrl(node, view.state.doc)
+        : visibleUrl;
       if (!urlNode) return false;
 
       const url = view.state.doc.sliceString(urlNode.from, urlNode.to);
