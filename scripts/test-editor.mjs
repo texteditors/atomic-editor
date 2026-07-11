@@ -1896,6 +1896,31 @@ async function probeTaskList(page) {
     .locator(`.cm-line:has-text("${uniq}") input.cm-atomic-task-checkbox`)
     .first();
 
+  const layout = await checkbox.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const line = el.closest('.cm-line');
+    const lineFontSize = line ? parseFloat(getComputedStyle(line).fontSize) : 0;
+    const width = el.getBoundingClientRect().width;
+    const marginLeft = parseFloat(style.marginLeft) || 0;
+    const marginRight = parseFloat(style.marginRight) || 0;
+    return {
+      appearance: style.appearance,
+      sizeEm: lineFontSize ? width / lineFontSize : 0,
+      footprintEm: lineFontSize
+        ? (width + marginLeft + marginRight) / lineFontSize
+        : 0,
+    };
+  });
+  const layoutStable =
+    layout.appearance === 'none' &&
+    Math.abs(layout.sizeEm - 1.05) < 0.06 &&
+    Math.abs(layout.footprintEm - 1.2) < 0.06;
+  record(
+    'task list: checkbox layout stable',
+    layoutStable ? 'pass' : 'fail',
+    `appearance=${layout.appearance} size=${layout.sizeEm.toFixed(2)}em footprint=${layout.footprintEm.toFixed(2)}em`,
+  );
+
   // Click to toggle. Use force: true because the input is a widget and
   // Playwright's normal actionability checks (not-covered, stable) can
   // trip over decoration rebuilds.
