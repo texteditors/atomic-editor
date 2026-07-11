@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [0.6.2]
+
+### Changed
+
+- Upgraded the development stack to React 19, TypeScript 7, Vite 8 with
+  Rolldown, Vitest 4, and current CodeMirror/Lezer releases. The published
+  editor retains its React 18/19 peer range and Node.js 18 runtime support.
+
+### Fixed
+
+- Clean package builds with `cpy-cli` 7 now preserve the exported
+  `dist/styles/inline-preview.css` path instead of treating `dist/styles` as a
+  file destination.
+- Added Vite's asset declarations for TypeScript 7 side-effect import checking
+  and migrated the remaining test utility to React 19's `act` API.
+
 ## [0.6.1]
 
 ### Added
