@@ -371,6 +371,9 @@ rationale. Short version:
 
 ## Contributing
 
+Development requires Node.js 20.19+, 22.12+, or 24+. The published editor
+itself continues to support Node.js 18 and newer.
+
 ```bash
 git clone https://github.com/kenforthewin/atomic-editor
 cd atomic-editor

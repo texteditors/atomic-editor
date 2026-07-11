@@ -54,7 +54,7 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -p tsconfig.build.json && cpy src/styles/inline-preview.css dist/styles --flat",
+    "build": "tsc -p tsconfig.build.json && cpy src/styles/inline-preview.css dist/styles/ --flat",
     "build:demo": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
