@@ -212,6 +212,22 @@ const INLINE_MARK_CLASS: Record<string, string> = {
   Link: 'cm-atomic-link',
 };
 
+// A Link can contain two URL nodes when its visible label is itself a
+// URL: `[https://label](https://destination)`. Only the node after the
+// closing `]` is the destination syntax that should collapse. Treating
+// every URL under Link as a destination makes the visible label vanish.
+function linkDestinationUrl(link: SyntaxNode, doc: Text): SyntaxNode | null {
+  const labelClose = link
+    .getChildren('LinkMark')
+    .find((mark) => doc.sliceString(mark.from, mark.to) === ']');
+  if (!labelClose) return null;
+  return (
+    link
+      .getChildren('URL')
+      .find((url) => url.from >= labelClose.to) ?? null
+  );
+}
+
 class BulletWidget extends WidgetType {
   eq(): boolean {
     return true;
@@ -450,16 +466,28 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
 
       if (node.name === 'URL' && node.from < node.to) {
         const parent = node.node.parent;
-        const isLinkedUrl = parent?.name === 'Link';
-        // Bare autolink URLs are the visible text in markdown, so keep
-        // them on screen when the line is inactive. Only the URL inside
-        // an explicit `[label](url)` link should be hidden until the
-        // cursor enters the link itself.
-        if (isLinkedUrl) {
-          const lineNum = doc.lineAt(node.from).number;
-          if (!activeLines.has(lineNum)) {
+        if (parent?.name === 'Link') {
+          // A URL in the label is visible content. A URL after the
+          // closing `]` is destination syntax and follows the existing
+          // cursor-inside-this-link reveal rule—not whole-line activity.
+          const destination = linkDestinationUrl(parent, doc);
+          if (
+            destination?.from === node.from &&
+            !activeLinkStarts.has(parent.from)
+          ) {
             pushReplace(ranges, doc, node.from, node.to);
           }
+        } else {
+          // Bare GFM URLs and `<https://...>` autolinks are visible
+          // content, not syntax. Give them the same styling and icon
+          // hit target as explicit links while leaving their text in
+          // the document flow on inactive lines.
+          ranges.push(
+            Decoration.mark({ class: 'cm-atomic-link' }).range(
+              node.from,
+              node.to,
+            ),
+          );
         }
       }
 
@@ -471,8 +499,8 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
       // renders escapes. The Escape node spans both characters
       // (`\` + escaped char), so we only replace the first position.
       if (node.name === 'Escape' && node.to - node.from >= 2) {
-        const line = doc.lineAt(node.from);
-        if (!activeLines.has(line.number) && shouldHideEscape(node, line)) {
+        const lineNum = doc.lineAt(node.from).number;
+        if (!activeLines.has(lineNum)) {
           pushReplace(ranges, doc, node.from, node.from + 1);
         }
       }
@@ -769,23 +797,6 @@ function indexOfUnconsumed(
   return -1;
 }
 
-function shouldHideEscape(node: { from: number; to: number }, line: { from: number; text: string }): boolean {
-  const localFrom = node.from - line.from;
-  const before = line.text.slice(0, localFrom);
-  const escapedChar = line.text.slice(localFrom + 1, localFrom + 2);
-
-  // URL-like schemes such as `http:` and `https:` occasionally get
-  // backslash-escaped by copy/paste or by external markdown sources.
-  // If we hide the backslash there, the inactive-line preview can make
-  // the URL look like it vanished. Leave those escapes visible so the
-  // raw text stays legible on blur.
-  if ((escapedChar === '/' || escapedChar === '\\') && /^[a-z][a-z0-9+.-]*:$/i.test(before)) {
-    return false;
-  }
-
-  return true;
-}
-
 const inlinePreviewPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -930,9 +941,14 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
 
       const tree = syntaxTree(view.state);
       let node: SyntaxNode | null = tree.resolveInner(pos, 1);
-      while (node && node.name !== 'Link') node = node.parent;
-      if (!node) return false;
-      const urlNode = node.getChild('URL');
+      let visibleUrl: SyntaxNode | null = null;
+      while (node && node.name !== 'Link') {
+        if (node.name === 'URL') visibleUrl = node;
+        node = node.parent;
+      }
+      const urlNode = node
+        ? linkDestinationUrl(node, view.state.doc)
+        : visibleUrl;
       if (!urlNode) return false;
 
       const url = view.state.doc.sliceString(urlNode.from, urlNode.to);
