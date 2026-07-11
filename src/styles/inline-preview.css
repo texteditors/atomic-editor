@@ -735,3 +735,22 @@
   --atomic-editor-hl-operator: #cf222e;
   --atomic-editor-hl-invalid: #82071e;
 }
+
+/* Read-only ("reading") mode. The `cm-atomic-readonly` class is set on
+ * the editor wrapper by `readOnlyExtension` (src/read-only.ts). In this
+ * mode nothing reveals its source and the whole document is a reading
+ * surface, so interactive affordances change accordingly. */
+
+/* The entire link is the open target now (not just the trailing icon),
+ * so the text gets the pointer cursor too — for both inline links and
+ * links rendered inside table cells. */
+.cm-atomic-readonly .cm-atomic-link,
+.cm-atomic-readonly .cm-atomic-wiki-link,
+.cm-atomic-readonly .cm-atomic-link-wrap {
+  cursor: pointer;
+}
+
+/* Table cells are inert: no caret, no text cursor. */
+.cm-atomic-readonly .cm-atomic-table-cell-source {
+  cursor: default;
+}

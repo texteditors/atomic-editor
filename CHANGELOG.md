@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until the package reaches `1.0.0`, minor versions may include breaking API
 changes as the public surface stabilizes.
 
+## [Unreleased]
+
+### Added
+
+- **Read-only ("reading") mode.** A new `readOnly` prop (and
+  `editorHandle.setReadOnly(...)`) renders the document as a reading
+  surface, like Obsidian's Reading view: the whole document stays
+  rendered (source never reveals under a caret), typing / paste / table
+  editing are disabled, and clicking a link — anywhere on it, not just
+  the trailing icon — opens it instead of placing a caret. Task
+  checkboxes stay toggleable and find-in-document still works. It's
+  backed by a CodeMirror `Compartment`, so toggling reconfigures the
+  live view in place (scroll position preserved, no remount). The
+  underlying `readOnlyFacet` / `readOnlyExtension` are exported for
+  custom-editor composition.
+
+### Fixed
+
+- Restore the React wrapper's documented `window.open` fallback when
+  `onLinkClick` is omitted.
+
 ## [0.4.3]
 
 Table-editing hardening. The WYSIWYG table widget is the most custom part
