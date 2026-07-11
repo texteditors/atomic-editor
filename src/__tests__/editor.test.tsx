@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -55,6 +55,77 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(content?.textContent).toContain('em');
   });
 
+  it('keeps bare URLs visible on inactive lines', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'- https://example.com'} />,
+    );
+
+    const content = host.querySelector('.cm-content');
+    expect(content).not.toBeNull();
+    expect(content?.textContent).toContain('https://example.com');
+  });
+
+  it.each([
+    ['same-text markdown link', '[https://example.com](https://example.com)'],
+    ['angle autolink', '<https://example.com>'],
+    ['escaped URL slashes', String.raw`https:\/\/example.com`],
+  ])('renders %s as clean visible URL text', (_name, markdown) => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={markdown} />,
+    );
+
+    expect(host.querySelector('.cm-content')?.textContent).toBe(
+      'https://example.com',
+    );
+  });
+
+  it.each([
+    ['https://example.com', 'https://example.com'],
+    [
+      '[https://label.example](https://destination.example)',
+      'https://destination.example',
+    ],
+  ])('opens the correct URL for %s', (markdown, expectedUrl) => {
+    const onLinkClick = vi.fn();
+    const { host } = mount(
+      <AtomicCodeMirrorEditor
+        markdownSource={markdown}
+        onLinkClick={onLinkClick}
+      />,
+    );
+    const link = host.querySelector<HTMLElement>('.cm-atomic-link');
+    expect(link).not.toBeNull();
+
+    vi.spyOn(link!, 'getClientRects').mockReturnValue([
+      {
+        left: 0,
+        right: 100,
+        top: 0,
+        bottom: 20,
+      } as DOMRect,
+    ] as unknown as DOMRectList);
+    const computedStyle = vi
+      .spyOn(window, 'getComputedStyle')
+      .mockReturnValue({ fontSize: '16px' } as CSSStyleDeclaration);
+    try {
+      act(() => {
+        link?.dispatchEvent(
+          new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            clientX: 95,
+            clientY: 10,
+          }),
+        );
+      });
+    } finally {
+      computedStyle.mockRestore();
+    }
+
+    expect(onLinkClick).toHaveBeenCalledWith(expectedUrl);
+  });
+
   it('renders highlight syntax with the expected preview class', () => {
     const { host } = mount(
       <AtomicCodeMirrorEditor markdownSource={'This has ==highlighted text== in it.'} />,
@@ -84,7 +155,9 @@ describe('AtomicCodeMirrorEditor', () => {
       />,
     );
 
-    const highlight = host.querySelector('.cm-atomic-table-cell-source .cm-atomic-highlight');
+    const highlight = host.querySelector(
+      '.cm-atomic-table-cell-source .cm-atomic-highlight',
+    );
     expect(highlight).not.toBeNull();
     expect(highlight?.textContent).toContain('glow');
   });

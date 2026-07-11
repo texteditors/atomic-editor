@@ -24,3 +24,8 @@ export type {
 } from './wiki-links';
 export { atomicEditorTheme, atomicMarkdownSyntax } from './atomic-theme';
 export { autoCloseCodeFence, extendEmphasisPair } from './edit-helpers';
+// Read-only ("reading") mode. `AtomicCodeMirrorEditor` exposes this via
+// its `readOnly` prop / `setReadOnly` handle; these are for consumers
+// composing a custom editor who want to drive the mode through their
+// own `Compartment`.
+export { readOnlyExtension, readOnlyFacet } from './read-only';

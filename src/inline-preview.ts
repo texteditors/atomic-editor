@@ -19,6 +19,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { treeGrowthEffect, treeProgressPlugin } from './tree-progress';
+import { readOnlyFacet } from './read-only';
 
 // Inline preview — the Obsidian "Live Preview" model.
 //
@@ -96,6 +97,17 @@ function linkIconHitTarget(event: MouseEvent, root?: HTMLElement): HTMLElement |
   return onIcon ? linkEl : null;
 }
 
+// Whole-link hit test, used in read-only mode where the entire link
+// (text + icon) is the open affordance. Mirrors `linkIconHitTarget`'s
+// containment check but without the trailing-icon zone restriction.
+function linkElementFromEvent(event: MouseEvent, root?: HTMLElement): HTMLElement | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const linkEl = target.closest<HTMLElement>('.cm-atomic-link');
+  if (!linkEl || (root && !root.contains(linkEl))) return null;
+  return linkEl;
+}
+
 // Tracks mouse state on the editor and drives the freeze flag. We listen
 // on the content DOM for pointerdown and on the window for pointerup —
 // users can release outside the editor after a drag, and we'd miss the
@@ -106,6 +118,9 @@ const freezeMousePlugin = ViewPlugin.fromClass(
     private releaseTimer: number | null = null;
     private readonly onDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      // Read-only never reveals, so there's nothing to freeze. Bail
+      // before any of the selection/icon plumbing runs.
+      if (this.view.state.facet(readOnlyFacet)) return;
       // Only freeze when the pointerdown lands inside the content. The
       // scrollbar (on the outer .cm-scroller) would otherwise engage the
       // freeze too — which keeps decorations stale for the whole drag
@@ -193,7 +208,6 @@ const HIDEABLE_SYNTAX = new Set([
   'CodeMark',
   'CodeInfo',
   'LinkMark',
-  'URL',
   'LinkTitle',
   'StrikethroughMark',
   'HighlightMark',
@@ -214,6 +228,22 @@ const INLINE_MARK_CLASS: Record<string, string> = {
   Highlight: 'cm-atomic-highlight',
   Link: 'cm-atomic-link',
 };
+
+// A Link can contain two URL nodes when its visible label is itself a
+// URL: `[https://label](https://destination)`. Only the node after the
+// closing `]` is the destination syntax that should collapse. Treating
+// every URL under Link as a destination makes the visible label vanish.
+function linkDestinationUrl(link: SyntaxNode, doc: Text): SyntaxNode | null {
+  const labelClose = link
+    .getChildren('LinkMark')
+    .find((mark) => doc.sliceString(mark.from, mark.to) === ']');
+  if (!labelClose) return null;
+  return (
+    link
+      .getChildren('URL')
+      .find((url) => url.from >= labelClose.to) ?? null
+  );
+}
 
 class BulletWidget extends WidgetType {
   eq(): boolean {
@@ -325,8 +355,13 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
   const { doc } = state;
   const ranges: Range<Decoration>[] = [];
 
+  // In read-only mode no line is ever "active" — the whole doc stays
+  // rendered (no reveal). We skip the selection walk entirely rather
+  // than relying on `hasFocus` staying false, so a programmatic
+  // `.focus()` can't accidentally reveal source under reading mode.
+  const readOnly = state.facet(readOnlyFacet);
   const activeLines = new Set<number>();
-  if (view.hasFocus) {
+  if (view.hasFocus && !readOnly) {
     for (const r of state.selection.ranges) {
       const firstLine = doc.lineAt(r.from).number;
       const lastLine = doc.lineAt(r.to).number;
@@ -448,6 +483,33 @@ function buildInlineDecorations(view: EditorView): DecorationSet {
             }
           }
           pushReplace(ranges, doc, node.from, hideTo);
+        }
+      }
+
+      if (node.name === 'URL' && node.from < node.to) {
+        const parent = node.node.parent;
+        if (parent?.name === 'Link') {
+          // A URL in the label is visible content. A URL after the
+          // closing `]` is destination syntax and follows the existing
+          // cursor-inside-this-link reveal rule—not whole-line activity.
+          const destination = linkDestinationUrl(parent, doc);
+          if (
+            destination?.from === node.from &&
+            !activeLinkStarts.has(parent.from)
+          ) {
+            pushReplace(ranges, doc, node.from, node.to);
+          }
+        } else {
+          // Bare GFM URLs and `<https://...>` autolinks are visible
+          // content, not syntax. Give them the same styling and icon
+          // hit target as explicit links while leaving their text in
+          // the document flow on inactive lines.
+          ranges.push(
+            Decoration.mark({ class: 'cm-atomic-link' }).range(
+              node.from,
+              node.to,
+            ),
+          );
         }
       }
 
@@ -805,12 +867,21 @@ const inlinePreviewPlugin = ViewPlugin.fromClass(
       // the whole parsed tree on the remaining triggers means
       // scroll-time cost is zero; the tree walk itself is
       // single-digit ms for typical atoms.
+      // A read-only toggle (compartment reconfigure) changes neither
+      // doc nor selection nor focus, so detect the facet flip directly
+      // — otherwise reading mode wouldn't repaint into / out of the
+      // fully-rendered state.
+      const readOnlyChanged =
+        update.startState.facet(readOnlyFacet) !==
+        update.state.facet(readOnlyFacet);
+
       if (
         justUnfroze ||
         update.docChanged ||
         update.selectionSet ||
         update.focusChanged ||
-        treeGrew
+        treeGrew ||
+        readOnlyChanged
       ) {
         this.decorations = buildInlineDecorations(update.view);
       }
@@ -894,7 +965,13 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
     click: (event, view) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
       if (event.button !== 0) return false;
-      const linkEl = linkIconHitTarget(event, view.contentDOM);
+      // In read-only mode there's no editable link text to protect, so
+      // a click anywhere on the link opens it. In edit mode the open
+      // affordance stays scoped to the trailing icon hit-zone so the
+      // text itself remains clickable-to-edit.
+      const linkEl = view.state.facet(readOnlyFacet)
+        ? linkElementFromEvent(event, view.contentDOM)
+        : linkIconHitTarget(event, view.contentDOM);
       if (!linkEl) return false;
 
       const pos = view.posAtDOM(linkEl);
@@ -902,9 +979,14 @@ function makeLinkClickHandler(onLinkClick: (url: string) => void): Extension {
 
       const tree = syntaxTree(view.state);
       let node: SyntaxNode | null = tree.resolveInner(pos, 1);
-      while (node && node.name !== 'Link') node = node.parent;
-      if (!node) return false;
-      const urlNode = node.getChild('URL');
+      let visibleUrl: SyntaxNode | null = null;
+      while (node && node.name !== 'Link') {
+        if (node.name === 'URL') visibleUrl = node;
+        node = node.parent;
+      }
+      const urlNode = node
+        ? linkDestinationUrl(node, view.state.doc)
+        : visibleUrl;
       if (!urlNode) return false;
 
       const url = view.state.doc.sliceString(urlNode.from, urlNode.to);

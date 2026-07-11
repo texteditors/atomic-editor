@@ -7,9 +7,10 @@
 
 A markdown editor where formatting renders as you type — headings, bold,
 tables, images, task lists — while the text underneath stays plain markdown.
-The document you read is the document you edit: no split preview, no mode
-toggle, and copy / save / round-trip behave exactly like a plain textarea
-full of markdown.
+The document you read is the document you edit: no split preview, and copy /
+save / round-trip behave exactly like a plain textarea full of markdown. An
+optional reading mode locks that same rendered surface without introducing a
+separate preview document.
 
 It's the writing surface behind
 [**Atomic**](https://github.com/kenforthewin/atomic), a personal knowledge
@@ -110,7 +111,30 @@ function App() {
 ```
 
 Methods: `focus`, `undo`, `redo`, `openSearch(query?)`, `closeSearch`,
-`revealText(query)`, `isSearchOpen`, `getMarkdown`, `getContentDOM`.
+`revealText(query)`, `isSearchOpen`, `getMarkdown`, `getContentDOM`,
+`setReadOnly(readOnly)`.
+
+### Read-only (reading) mode
+
+Pass `readOnly` to render the document as a reading surface, like
+Obsidian's Reading view:
+
+```tsx
+<AtomicCodeMirrorEditor markdownSource={'…'} readOnly />
+```
+
+In read-only mode the whole document stays rendered — source never
+reveals under a caret — typing / paste / table editing are disabled,
+and clicking a link (anywhere on it, not just the trailing icon) opens
+it instead of placing a caret. Task checkboxes stay toggleable and
+find-in-document still works.
+
+`readOnly` is backed by a CodeMirror `Compartment`, so flipping it
+reconfigures the live view in place — scroll position and search state
+are preserved, no remount. Drive it from a prop, or imperatively via
+`editorHandle.setReadOnly(true)` for a toolbar toggle outside React's
+render cycle. For consumers composing a custom editor, the underlying
+`readOnlyFacet` and `readOnlyExtension` are exported too.
 
 ### Arriving from a search result
 
