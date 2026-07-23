@@ -131,6 +131,16 @@
   padding-right: 0.75rem;
 }
 
+/* `drawSelection()` paints behind content, where the opaque code backdrop
+ * would cover it. A selection-only inline decoration mirrors the same token
+ * above the block background while leaving syntax-highlighted text on top. */
+.cm-atomic-fenced-selection {
+  background-color: var(
+    --atomic-editor-selection-bg,
+    color-mix(in srgb, #7c3aed 28%, #1e1e1e 72%)
+  );
+}
+
 /* Inline content marks — applied on the text inside **…**, *…*, `…`,
  * ~~…~~, [text](url). Styling only; no height changes. */
 .cm-atomic-strong {
@@ -325,8 +335,8 @@
 /* Shared marker alcove — forces bullet, task checkbox, and
  * ordered-list number into the same fixed horizontal width so the
  * inline-preview line padding / text-indent math is stable across
- * list kinds. Width here must match ALCOVE_EM in inline-preview.ts
- * (`ListMark` branch). Without the fixed width, wrapped-line
+ * list kinds. Width here must match LIST_ALCOVE_EM in
+ * inline-preview.ts. Without the fixed width, wrapped-line
  * indent lands in different places for each kind because the raw
  * marker widths differ per font. */
 .cm-atomic-list-marker {
@@ -351,7 +361,8 @@
 .cm-atomic-task-checkbox {
   width: 1.05em;
   height: 1.05em;
-  margin: 0 0.15em 0 0;
+  margin: 0 0.31em 0 -0.16em;
+  font-size: inherit;
   vertical-align: 0.1em;
   appearance: none;
   -webkit-appearance: none;
@@ -388,6 +399,16 @@
 .cm-atomic-task-checkbox:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--atomic-editor-accent, #7c3aed) 28%, transparent 72%);
+}
+
+/* Forced-colors mode removes box shadows, so retain a visible keyboard
+ * focus indicator using system colors instead. */
+@media (forced-colors: active) {
+  .cm-atomic-task-checkbox:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
 }
 
 /* Whole-line strike for completed task items. */
@@ -787,4 +808,23 @@
   --atomic-editor-hl-variable: #24292f;
   --atomic-editor-hl-operator: #cf222e;
   --atomic-editor-hl-invalid: #82071e;
+}
+
+/* Read-only ("reading") mode. The `cm-atomic-readonly` class is set on
+ * the editor wrapper by `readOnlyExtension` (src/read-only.ts). In this
+ * mode nothing reveals its source and the whole document is a reading
+ * surface, so interactive affordances change accordingly. */
+
+/* The entire link is the open target now (not just the trailing icon),
+ * so the text gets the pointer cursor too — for both inline links and
+ * links rendered inside table cells. */
+.cm-atomic-readonly .cm-atomic-link,
+.cm-atomic-readonly .cm-atomic-wiki-link,
+.cm-atomic-readonly .cm-atomic-link-wrap {
+  cursor: pointer;
+}
+
+/* Table cells are inert: no caret, no text cursor. */
+.cm-atomic-readonly .cm-atomic-table-cell-source {
+  cursor: default;
 }
