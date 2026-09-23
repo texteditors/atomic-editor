@@ -83,6 +83,25 @@ function App() {
 The editor fills its parent — wrap it in a height-bounded flex or grid
 container.
 
+### Native spellcheck
+
+Pass `spellcheck` to opt into the browser or embedded WebView's native
+spelling service. Atomic applies the setting to CodeMirror's editable
+`.cm-content` surface and its text wrappers, so spelling markers, correction
+menus, and the user dictionary stay native to the host platform.
+
+```tsx
+<AtomicCodeMirrorEditor
+  markdownSource={'A paragraph with a misspeled word.'}
+  spellcheck
+  spellcheckLanguage="en-US"
+/>
+```
+
+`spellcheckLanguage` accepts any BCP 47 language tag and defaults to `en-US`.
+Native spelling display ultimately depends on the browser or WebView; Atomic
+does not draw replacement spellcheck decorations.
+
 ### Imperative handle
 
 Pass a ref if you need to drive the editor from outside — e.g. wire

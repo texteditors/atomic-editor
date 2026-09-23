@@ -56,6 +56,21 @@ describe('AtomicCodeMirrorEditor', () => {
     expect(content?.textContent).toContain('em');
   });
 
+  it('enables native writing assistance only when spellcheck is requested', () => {
+    const { host } = mount(
+      <AtomicCodeMirrorEditor markdownSource={'Helloo world'} spellcheck />,
+    );
+    const content = host.querySelector<HTMLElement>('.cm-content');
+
+    expect(content).not.toBeNull();
+    expect(content?.getAttribute('spellcheck')).toBe('true');
+    expect(content?.getAttribute('lang')).toBe('en-US');
+    expect(content?.getAttribute('autocorrect')).toBe('on');
+    expect(content?.getAttribute('autocapitalize')).toBe('sentences');
+    expect(content?.getAttribute('writingsuggestions')).toBe('true');
+    expect(content?.querySelector('[spellcheck="true"]')).not.toBeNull();
+  });
+
   it('applies the owning list item indent to physical continuation lines', () => {
     const markdown = [
       '- [ ] Move `a/b.ts` to `a/c/b.ts` (no',

@@ -8,6 +8,7 @@ import {
   highlightSpecialChars,
   keymap,
   rectangularSelection,
+  ViewPlugin,
   type Panel,
 } from '@codemirror/view';
 import {
@@ -64,6 +65,34 @@ function defaultOpenLink(url: string): void {
   } catch {
     // window.open can throw in sandboxed iframes etc.
   }
+}
+
+function nativeSpellcheckText(language: string): Extension {
+  const mark = Decoration.mark({ attributes: { spellcheck: 'true', lang: language } });
+
+  const buildDecorations = (view: EditorView) => {
+    const ranges = [];
+    for (let lineNumber = 1; lineNumber <= view.state.doc.lines; lineNumber += 1) {
+      const line = view.state.doc.line(lineNumber);
+      if (line.length > 0) ranges.push(mark.range(line.from, line.to));
+    }
+    return Decoration.set(ranges, true);
+  };
+
+  return ViewPlugin.fromClass(
+    class {
+      decorations;
+
+      constructor(view: EditorView) {
+        this.decorations = buildDecorations(view);
+      }
+
+      update(update: { docChanged: boolean; view: EditorView }) {
+        if (update.docChanged) this.decorations = buildDecorations(update.view);
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
 }
 
 export interface AtomicCodeMirrorEditorHandle {
@@ -153,6 +182,25 @@ export interface AtomicCodeMirrorEditorProps {
    * to `false`.
    */
   readOnly?: boolean;
+
+  /**
+   * Enable the browser or WebView's native writing assistance on the
+   * editable CodeMirror surface and its text wrappers. This lets the host
+   * platform provide its own spelling indicators, correction menu, and user
+   * dictionary, including browsers that associate spellchecking with the
+   * immediate parent of a text node rather than the editing host.
+   *
+   * Defaults to `false` to preserve the editor's existing code-oriented
+   * behavior. The setting is captured at mount like `extensions`; change
+   * `documentId` to apply a different value.
+   */
+  spellcheck?: boolean;
+
+  /**
+   * BCP 47 language tag passed to the native spelling service when
+   * `spellcheck` is enabled. Defaults to `en-US`.
+   */
+  spellcheckLanguage?: string;
 
   /**
    * Called on every doc change with the current markdown. Fires for
@@ -252,6 +300,8 @@ export function AtomicCodeMirrorEditor({
   initialRevealText,
   blurEditorOnMount,
   readOnly = false,
+  spellcheck = false,
+  spellcheckLanguage = 'en-US',
   onMarkdownChange,
   onLinkClick,
   editorHandleRef,
@@ -316,6 +366,18 @@ export function AtomicCodeMirrorEditor({
           extendEmphasisPair,
           autoCloseCodeFence,
           EditorView.lineWrapping,
+          ...(spellcheck
+            ? [
+                EditorView.contentAttributes.of({
+                  spellcheck: 'true',
+                  lang: spellcheckLanguage,
+                  autocorrect: 'on',
+                  autocapitalize: 'sentences',
+                  writingsuggestions: 'true',
+                }),
+                nativeSpellcheckText(spellcheckLanguage),
+              ]
+            : []),
           // Find-in-document. `top: true` drops the panel above the
           // editor (matching Obsidian / the prior Milkdown panel).
           // The createPanel wrapper adds a stable class that external
