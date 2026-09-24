@@ -1,0 +1,58 @@
+:root {
+  color: #1e2933;
+  background: #edf2f3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.spellcheck-probe {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #b9c5c8;
+}
+
+.spellcheck-probe-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 1.5rem;
+  background: #ffffff;
+}
+
+.spellcheck-probe-panel h1 {
+  margin: 0 0 1rem;
+  color: #33414a;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.spellcheck-probe-input,
+.spellcheck-probe-panel .cm-editor {
+  min-height: 12rem;
+  padding: 1rem;
+  border: 1px solid #aab9bd;
+  border-radius: 4px;
+  background: #ffffff;
+  font: 1rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.spellcheck-probe-input:focus,
+.spellcheck-probe-panel .cm-editor.cm-focused {
+  outline: 2px solid #257c78;
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .spellcheck-probe {
+    grid-template-columns: 1fr;
+  }
+}
