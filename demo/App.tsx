@@ -409,6 +409,8 @@ export function App() {
             markdownSource={markdownSource}
             documentId={documentId}
             readOnly={readOnly}
+            spellcheck
+            spellcheckLanguage="en-US"
             codeLanguages={ATOMIC_CODE_LANGUAGES}
             initialRevealText={revealText}
             editorHandleRef={editorRef}
